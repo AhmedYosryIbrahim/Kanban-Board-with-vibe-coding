@@ -2,7 +2,8 @@
 
 Flutter web app for the Kanban board. Package name `kanban_frontend`. Every
 board change goes through the backend API and is persisted in SQLite; the app
-ships no dummy data.
+ships no dummy data. An assistant sidebar talks to the AI and refreshes the
+board when the AI changes it.
 
 In Docker the release bundle is built by stage 1 of the root `Dockerfile` and
 served by the backend at `/`.
@@ -38,16 +39,19 @@ lib/
   data/
     auth_repository.dart          AuthRepository, AuthException, provider
     board_repository.dart         BoardRepository, BoardException, provider
+    chat_repository.dart          ChatRepository, ChatException, provider
   viewmodels/
     auth_view_model.dart          AuthViewModel + authViewModelProvider
   views/
     login_screen.dart             LoginScreen
   models/
     board.dart                    Board { id, name, subtitle, List<BoardColumn> columns }
+    chat_message.dart             ChatMessage, ChatRole, ChatReply
     board_column.dart             BoardColumn { id, title, List<CardItem> cards }
     card_item.dart                CardItem { id, title, details }
   viewmodels/
     board_view_model.dart         BoardViewModel + boardViewModelProvider
+    chat_view_model.dart          ChatViewModel, ChatState, chatOpenProvider
   views/
     board_screen.dart             BoardScreen, _BoardBody, _BoardError, _WebTopBar
   widgets/
@@ -55,6 +59,7 @@ lib/
     card_widget.dart              CardWidget, _CardContent, DraggedCard payload
     card_dialog.dart              showAddCardDialog, showEditCardDialog, shared _CardDialog
     board_action.dart             runBoardAction - reports a failed mutation
+    chat_sidebar.dart             ChatSidebar, message bubbles, composer
   theme/
     app_colors.dart               AppColors palette
     app_theme.dart                AppTheme.light
@@ -121,6 +126,41 @@ Providers with no listeners are torn down. Two consequences worth knowing:
   When the build fails, `provider.future` never completes at all - assert on the
   `AsyncError` state instead, which is what the UI renders anyway.
 
+## Chat
+
+`ChatViewModel extends AsyncNotifier<ChatState>`, where `ChatState` is the
+message list plus an `isSending` flag. `build()` loads the thread from
+`GET /api/chat`, so a conversation survives a reload.
+
+`send` appends the user's message, awaits the reply, then appends it. When the
+backend reports `boardChanged: true` it calls
+`ref.invalidate(boardViewModelProvider)` and the board refetches on its own -
+that is the whole mechanism behind the board updating after an AI change.
+
+A failed send **removes** the user's message rather than leaving it in the
+thread, puts a `ChatRole.error` entry in its place, and rethrows. The sidebar
+catches that and restores the text to the composer. The message never reached
+the backend, so leaving it sitting in the thread would misrepresent what
+happened.
+
+`chatOpenProvider` is a `Notifier<bool>` holding whether the panel is open.
+Riverpod 3 removed `StateProvider`, so a plain `Notifier` with `toggle` and
+`close` takes its place.
+
+Enter sends and Shift+Enter inserts a newline. A multiline `TextField` never
+fires `onSubmitted`, so the key is caught by a `Focus` wrapper around the field.
+
+### Layout
+
+`BoardScreen` uses a `LayoutBuilder`. At 900 logical pixels and wider the
+sidebar sits in a `Row` and the board shrinks beside it. Below that there is not
+enough room for both, so the panel is drawn over the board in a `Stack` instead
+of squeezing it.
+
+The top bar drops the "Board" and "Projects" labels and the username below 720
+pixels. Without that it overflows once the Assistant button is present - a
+widget test at 700 pixels catches it.
+
 ## Drag and drop
 
 Uses the Flutter `Draggable` / `DragTarget` pair, not a package.
@@ -166,7 +206,7 @@ draws them when the callbacks are non-null.
 
 ## Tests
 
-`flutter test`, currently 42 tests.
+`flutter test`, currently 58 tests.
 
 `test/support/` holds the shared harness:
 
@@ -179,6 +219,8 @@ draws them when the callbacks are non-null.
 - `fake_board_repository.dart` - records the calls the viewmodel makes, and can
   be told to fail the next mutation (`failNextWith`), fail the load
   (`loadError`), or hold the load open (`holdLoad`).
+- `fake_chat_repository.dart` - the same idea for chat, plus `boardChanged` and
+  `holdSend` for the pending state.
 - `board_fixture.dart` - the seeded board as test data. This is where the old
   `lib/data/dummy_data.dart` went; the app itself no longer ships dummy data.
 
@@ -196,6 +238,11 @@ Files:
 - `test/views/login_screen_test.dart` - which screen each session state shows,
   rejected credentials, a successful login, empty-field validation, logout, and
   the username in the top bar
+- `test/viewmodels/chat_view_model_test.dart` - thread loading, send, the error
+  path, and that `boardChanged` does and does not trigger a board refetch
+- `test/widgets/chat_sidebar_test.dart` - opening and closing, the stored
+  thread, sending, the pending indicator, a failed send restoring the text, the
+  board refreshing after an AI change, and both layouts
 - `test/widgets/board_interaction_test.dart` - edit dialog prefill, a completed
   edit, empty-title validation, and a drag between columns driven by a manual
   multi-step gesture. These need a wide viewport, so each test calls
@@ -204,6 +251,13 @@ Files:
 
 ## Known gaps
 
-These are expected to be closed by later parts of `docs/PLAN.md`:
+- The board title and column set are fixed by the backend seed; there is no UI
+  for adding or removing columns, which is intentional for the MVP.
 
-- No AI chat sidebar.
+## Testing against a browser
+
+Widget tests cover the composer, but the in-app browser pane cannot focus
+Flutter web's hidden text input, so sending a chat message cannot be driven by
+hand there. Opening the sidebar, the thread loading from `GET /api/chat`, and
+the layout are all verifiable in the browser; typing is not. Drive the backend
+directly with `curl` when you need to exercise a chat turn end to end.

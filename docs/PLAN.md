@@ -49,9 +49,9 @@ scripts/                 start/stop for Mac, Linux, Windows
 - [x] Part 5: Database modeling
 - [x] Part 6: Backend
 - [x] Part 7: Frontend + Backend
-- [ ] Part 8: AI connectivity
-- [ ] Part 9: AI board updates
-- [ ] Part 10: AI chat sidebar
+- [x] Part 8: AI connectivity
+- [x] Part 9: AI board updates
+- [x] Part 10: AI chat sidebar
 
 ---
 
@@ -449,32 +449,50 @@ Prove the OpenRouter call works, nothing more.
 
 ## Checklist
 
-- [ ] `backend/src/ai/openrouter.js` - `callOpenRouter(messages)` against
-      `https://openrouter.ai/api/v1/chat/completions` using global `fetch`
-- [ ] Model `openai/gpt-oss-120b`
-- [ ] `OPENROUTER_API_KEY` read from the environment, never logged, never sent
-      to the frontend
-- [ ] Clear error when the key is missing or the call fails
-- [ ] Confirm the key reaches the container via `--env-file .env`
-- [ ] A temporary connectivity check asking "what is 2+2"
+- [x] `backend/src/ai/openrouter.js` - `callOpenRouter(messages, options)`
+      against `https://openrouter.ai/api/v1/chat/completions` using global
+      `fetch`, returning the assistant's message content
+- [x] Model `openai/gpt-oss-120b`, exported as `MODEL` so callers and tests
+      agree on it
+- [x] `OPENROUTER_API_KEY` read from the environment at call time, never
+      logged, never sent to the frontend
+- [x] Clear error when the key is missing or the call fails
+- [x] `responseFormat` passed through, ready for Part 9's Structured Outputs
+- [x] Confirm the key reaches the container via `--env-file`
+- [x] A connectivity check asking "what is 2+2", as `npm run check:ai`
 
 ## Tests
 
-- [ ] Unit test with a stubbed `fetch`: the request carries the right model,
-      auth header, and message shape
-- [ ] Unit test: a missing key produces a clear error and no network call
-- [ ] Unit test: a non-200 response from OpenRouter surfaces as a clear error
-- [ ] A live connectivity check, run manually, that asks "what is 2+2" and
-      asserts the answer contains "4". Not part of `npm test` - the automated
-      suite must never depend on the network or spend tokens.
+- [x] Unit test with a stubbed `fetch`: the request carries the right endpoint,
+      model, auth header, and message shape
+- [x] Unit test: a response format is passed through when given, and omitted
+      when not
+- [x] Unit test: a missing key produces a clear error and no network call
+- [x] Unit test: a non-200 response surfaces as a clear error
+- [x] Unit test: the error message never contains the key
+- [x] Unit test: a response with no message content is rejected
+- [x] `npm test` 59/59, with no network access
+- [x] The live check is run by hand and is not part of `npm test`
 
 ## Success criteria
 
-- The live check returns 4 from inside the running container
-- `npm test` passes with no network access
-- The key does not appear in any log line or any HTTP response
+- [x] The live check returns 4 from inside the running container
+- [x] `npm test` passes with no network access
+- [x] The key does not appear in any log line or any HTTP response. Checked
+      against the container logs, `/api/me`, `/api/board`, `/api/health`, and
+      the error path from a deliberately bad key, which reports only
+      `OpenRouter request failed (401)`.
 
----
+## Notes
+
+The live check is `npm run check:ai`, a script rather than a test. An automated
+suite that needs the network and spends tokens on every run is one people stop
+running, so the automated tests stub `fetch` and the real call stays manual. The
+script reads the repo-root `.env` through Node's `--env-file-if-exists`.
+
+`callOpenRouter` reads the key at call time rather than at import, so a missing
+key does not stop the server from starting or break the board routes; only the
+AI path fails, and it fails before making a request.
 
 # Part 9: AI board updates
 
@@ -484,47 +502,81 @@ optional board operations.
 
 ## Checklist
 
-- [ ] System prompt explaining the board, the column ids, and the available
-      operations
-- [ ] Every call includes the current board JSON and the stored conversation
-      history
-- [ ] Strict Structured Outputs JSON schema:
-      `{ reply: string, operations: [...] }`
-- [ ] Operation types: `create_card`, `update_card`, `move_card`, `delete_card`,
-      `rename_column` - each carrying the ids it needs
-- [ ] `backend/src/ai/board-tools.js` applies operations to the database,
+- [x] System prompt explaining the board, the ids, and the available operations
+- [x] Every call includes the current board JSON and the stored conversation
+      history, capped at `HISTORY_LIMIT` so it cannot grow without bound
+- [x] Strict Structured Outputs JSON schema: `{ reply, operations }`
+- [x] Operation types: `create_card`, `update_card`, `move_card`,
+      `delete_card`, `rename_column`, each carrying the ids it needs
+- [x] `backend/src/ai/schema.js` holds the schema and `parseBoardResponse`,
+      which validates the response rather than trusting it
+- [x] `backend/src/ai/board-tools.js` applies operations to the database,
       reusing the Part 6 logic
-- [ ] Operations applied in one transaction - all or nothing
-- [ ] Operations referencing unknown ids are rejected without applying anything,
-      and the reply says so
-- [ ] `POST /api/chat` persists both the user message and the reply to
+- [x] Operations applied in one transaction - all or nothing. `transaction` was
+      made re-entrant, because SQLite rejects a `BEGIN` inside a `BEGIN` and the
+      per-operation functions already open their own.
+- [x] Operations referencing unknown ids are rejected without applying
+      anything, and the reply says so
+- [x] `POST /api/chat` persists both the user message and the reply to
       `messages` and returns `{ reply, boardChanged }`
+- [x] `GET /api/chat` returns the stored conversation, pulled forward from
+      Part 10 which needs it to restore the thread after a reload
 
 ## Tests
 
-- [ ] Schema unit test: a valid model response parses; a malformed one is
-      rejected with a clear error
-- [ ] `board-tools` unit tests, one per operation type, asserting the database
+- [x] Schema unit test: the format is strict and every property is required
+- [x] Schema unit tests: a valid response parses, a chat-only response parses,
+      and non-JSON, a missing reply, a non-array operations list, an unknown
+      operation name, and a malformed entry are all rejected
+- [x] Schema unit tests: each operation must carry the fields it needs, and
+      `update_card` must change at least one field
+- [x] `board-tools` unit tests, one per operation type, asserting the database
       state afterwards
-- [ ] Multiple operations in one response all apply
-- [ ] One invalid operation in a batch rolls back the whole batch
-- [ ] An unknown card id is rejected without a partial write
-- [ ] `POST /api/chat` with a stubbed AI returns the reply and sets
+- [x] Multiple operations in one response all apply
+- [x] One invalid operation in a batch rolls back the whole batch, including
+      the valid operations that ran before it
+- [x] An unknown card id is rejected without a partial write
+- [x] The AI cannot touch another user's board
+- [x] A batch of moves leaves positions contiguous
+- [x] `POST /api/chat` with a stubbed AI returns the reply and sets
       `boardChanged` correctly for both a chatty response and an acting one
-- [ ] Conversation history is persisted and included in the next call
-- [ ] `POST /api/chat` returns 401 without a session
+- [x] The model is sent the board JSON, the strict schema, and the user message
+- [x] Conversation history is persisted and included in the next call
+- [x] Replayed history is capped
+- [x] A malformed model response surfaces as an error
+- [x] An empty message is rejected without calling the model
+- [x] `POST` and `GET /api/chat` return 401 without a session
+- [x] `npm test` 93/93, with no network access
 
 ## Success criteria
 
-- With a live key, "add a card called Deploy to staging in the To Do column"
-  creates exactly that card, and `GET /api/board` shows it
-- "what is on my board" answers without changing anything and reports
-  `boardChanged: false`
-- A conversational follow-up such as "move that one to Done" resolves the
-  reference using history
-- The automated suite still passes with no network access
+- [x] With a live key, "add a card called Deploy to staging in the Backlog
+      column" created exactly that card and reported `boardChanged: true`
+- [x] "What is on my board" answered accurately without changing anything and
+      reported `boardChanged: false`
+- [x] "Move that one to Done" resolved the reference from history and moved the
+      right card
+- [x] A multi-operation request - rename a column and add two cards - applied
+      all three operations in one turn
+- [x] Positions stayed contiguous from 0 in every column afterwards
+- [x] The automated suite still passes with no network access
 
----
+## Notes
+
+The live checks found a real prompt bug. The first version said only "Use only
+the ids that appear in the board JSON. Never invent an id", and the model
+refused to create cards at all, explaining that `create_card` needed a unique id
+it was not allowed to make up. The prompt now states that the server assigns new
+card ids and that `cardId` is null on `create_card`. Worth remembering that a
+rule written for one operation can be over-applied to another.
+
+It also refused to add a card to a column called "To Do" when that column had
+been renamed to "Backlog" earlier in the project. That is correct behaviour, not
+a bug: it declined rather than inventing an id.
+
+When a batch fails, the route discards the model's reply rather than prefixing
+it. "Done, I moved it" standing above an unchanged board is worse than a plain
+statement that nothing happened.
 
 # Part 10: AI chat sidebar
 
@@ -532,34 +584,71 @@ The chat UI, with automatic board refresh when the AI changes something.
 
 ## Checklist
 
-- [ ] `lib/widgets/chat_sidebar.dart` - collapsible right sidebar using the
+- [x] `lib/data/chat_repository.dart` wrapping `GET` and `POST /api/chat`
+- [x] `lib/models/chat_message.dart` - `ChatMessage`, `ChatRole`, `ChatReply`
+- [x] `lib/widgets/chat_sidebar.dart` - collapsible right sidebar using the
       project palette
-- [ ] `ChatViewModel` holding the message list and the sending state
-- [ ] Message bubbles distinguishing user and assistant
-- [ ] Multiline input, Enter to send, Shift+Enter for a newline
-- [ ] Pending indicator while awaiting the reply
-- [ ] Error message in the thread when the call fails, with the input preserved
-- [ ] On `boardChanged: true`, invalidate the board provider so the board
+- [x] `ChatViewModel` holding the message list and the sending state, loading
+      the thread from the backend so it survives a reload
+- [x] Message bubbles distinguishing user and assistant
+- [x] Multiline input, Enter to send, Shift+Enter for a newline
+- [x] Pending indicator while awaiting the reply
+- [x] Error entry in the thread when the call fails, with the input restored
+- [x] On `boardChanged: true`, invalidate the board provider so the board
       refreshes with no user action
-- [ ] Board layout adapts when the sidebar opens - the columns stay usable
-- [ ] Sidebar collapses on narrow viewports
+- [x] Board layout adapts when the sidebar opens - the columns stay usable
+- [x] Sidebar overlays rather than squeezing below 900 pixels
+- [x] Top bar sheds its nav labels below 720 pixels
 
 ## Tests
 
-- [ ] Chat viewmodel: sending appends the user message then the reply
-- [ ] Chat viewmodel: a failed send surfaces an error and keeps the input
-- [ ] Chat viewmodel: `boardChanged: true` triggers the board reload
-- [ ] Widget test: typing and submitting renders both bubbles
-- [ ] Widget test: the pending indicator shows while the call is in flight
-- [ ] Widget test: the sidebar opens and closes
-- [ ] Widget test: a board change from chat updates the visible columns
-- [ ] `flutter analyze` clean, full Flutter and backend suites pass
+- [x] Chat viewmodel: the thread loads from the backend
+- [x] Chat viewmodel: sending appends the user message then the reply
+- [x] Chat viewmodel: a failed send replaces the message with an error, keeps
+      earlier messages, and rethrows
+- [x] Chat viewmodel: `boardChanged: true` triggers the board reload, and false
+      does not
+- [x] Chat viewmodel: a failed load surfaces as an error state
+- [x] Widget test: the sidebar opens and closes
+- [x] Widget test: the stored thread is shown when the sidebar opens
+- [x] Widget test: typing and submitting renders both bubbles and clears the
+      composer
+- [x] Widget test: the pending indicator shows while the call is in flight
+- [x] Widget test: a failed send shows the error and gives the text back
+- [x] Widget test: a board change from chat updates the visible columns
+- [x] Widget test: both layouts, wide and narrow
+- [x] `flutter analyze` clean, `flutter test` 58/58, `npm test` 93/93
 
 ## Success criteria
 
-- Asking the AI to create, move, or rename in the sidebar updates the board on
-  screen with no manual refresh
-- The change persists across a reload
-- The chat thread survives a reload, loaded from `messages`
-- The full app works end to end from `./scripts/start.sh` on a clean machine
-  with only Docker and a `.env` file
+- [x] Asking the AI to create, move, or rename updates the board with no manual
+      refresh. Covered by a widget test asserting the new card appears and the
+      board was refetched; the backend half was driven live in Part 9.
+- [x] The change persists across a reload - the board is read from the API
+- [x] The chat thread survives a reload, loaded from `messages`. Verified in a
+      real browser: opening the sidebar showed the conversation from Part 9,
+      which had survived a container rebuild.
+- [x] The full app works end to end from `./scripts/start.sh` on a clean machine
+      with only Docker and a `.env` file
+
+## Notes
+
+Riverpod 3 removed `StateProvider`, so the open/closed flag is a plain
+`Notifier<bool>`.
+
+A failed send removes the user's message from the thread rather than leaving it
+there. It never reached the backend, so showing it as sent would be wrong; an
+error entry takes its place and the composer gets the text back.
+
+The narrow-viewport test caught a real bug: with the Assistant button added, the
+top bar overflowed by 58 pixels at 700 wide. The bar now drops its nav labels
+and the username below 720.
+
+**A verification limit worth recording.** The in-app browser pane cannot focus
+Flutter web's hidden text input - clicks leave `document.activeElement` on
+`flutter-view` and the off-screen textarea never takes focus, so a chat message
+cannot be typed by hand there. What was confirmed in the real browser: the
+sidebar opening, the board shrinking beside it, bubble styling, and the thread
+loading through `GET /api/chat` from the live backend. Sending through the
+composer is covered by widget tests, and the backend chat turn was driven live
+in Part 9. Use `curl` for a live end-to-end chat turn.

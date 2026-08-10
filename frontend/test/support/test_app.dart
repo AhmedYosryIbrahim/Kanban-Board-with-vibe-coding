@@ -4,11 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kanban_frontend/data/auth_repository.dart';
 import 'package:kanban_frontend/data/board_repository.dart';
+import 'package:kanban_frontend/data/chat_repository.dart';
 import 'package:kanban_frontend/main.dart';
 
 import 'fake_board_repository.dart';
+import 'fake_chat_repository.dart';
 
 export 'fake_board_repository.dart';
+export 'fake_chat_repository.dart';
 
 /// In-memory stand-in for [AuthRepository].
 ///
@@ -57,6 +60,7 @@ Future<void> pumpApp(
   WidgetTester tester, {
   required AuthRepository auth,
   BoardRepository? board,
+  ChatRepository? chat,
   bool settle = true,
 }) async {
   await tester.pumpWidget(
@@ -66,6 +70,7 @@ Future<void> pumpApp(
         boardRepositoryProvider.overrideWithValue(
           board ?? FakeBoardRepository(),
         ),
+        chatRepositoryProvider.overrideWithValue(chat ?? FakeChatRepository()),
       ],
       child: const KanbanApp(),
     ),
@@ -78,12 +83,14 @@ Future<void> pumpApp(
 Future<void> pumpSignedInApp(
   WidgetTester tester, {
   BoardRepository? board,
+  ChatRepository? chat,
   bool settle = true,
 }) {
   return pumpApp(
     tester,
     auth: FakeAuthRepository(signedInAs: 'user'),
     board: board,
+    chat: chat,
     settle: settle,
   );
 }

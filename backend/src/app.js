@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { authRouter } from './routes/auth.js';
 import { createBoardRouter } from './routes/board.js';
+import { createChatRouter } from './routes/chat.js';
 
 const defaultStaticDir = fileURLToPath(new URL('../public', import.meta.url));
 
@@ -13,6 +14,7 @@ const defaultStaticDir = fileURLToPath(new URL('../public', import.meta.url));
  */
 export function createApp({
   db,
+  callAi,
   staticDir = defaultStaticDir,
   sessionSecret = 'dev-secret',
 } = {}) {
@@ -29,6 +31,7 @@ export function createApp({
 
   if (db) {
     app.use('/api', createBoardRouter(db));
+    app.use('/api', createChatRouter(db, callAi ? { callAi } : {}));
   }
 
   // Unknown API routes answer as JSON. Without this they would fall through to

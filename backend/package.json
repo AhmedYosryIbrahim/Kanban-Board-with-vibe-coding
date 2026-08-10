@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "check:ai": "node --env-file-if-exists=../.env scripts/check-ai.js"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

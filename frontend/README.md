@@ -10,6 +10,8 @@ A single-board Kanban project management app built with Flutter web.
 - Drag and drop cards between columns
 - Add, edit, and delete cards
 - Every change persisted through the backend API into SQLite
+- AI assistant sidebar that can create, edit, move, and delete cards and rename
+  columns, refreshing the board automatically when it does
 
 ## Architecture
 

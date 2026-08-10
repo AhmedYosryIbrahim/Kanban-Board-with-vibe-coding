@@ -83,8 +83,29 @@ export function openDatabase(file = 'data/kanban.db') {
   return db;
 }
 
-/** Runs work inside a transaction, rolling back if anything throws. */
+const openTransactions = new WeakMap();
+
+/**
+ * Runs work inside a transaction, rolling back if anything throws.
+ *
+ * Re-entrant: SQLite rejects a BEGIN inside a BEGIN, and the AI applies a batch
+ * of operations that each already wrap themselves in a transaction. A nested
+ * call just runs the work, letting the outermost transaction commit or roll
+ * back the lot, which is what makes an AI batch all-or-nothing.
+ */
 export function transaction(db, work) {
+  const depth = openTransactions.get(db) ?? 0;
+
+  if (depth > 0) {
+    openTransactions.set(db, depth + 1);
+    try {
+      return work();
+    } finally {
+      openTransactions.set(db, depth);
+    }
+  }
+
+  openTransactions.set(db, 1);
   db.exec('BEGIN');
   try {
     const result = work();
@@ -93,6 +114,8 @@ export function transaction(db, work) {
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
+  } finally {
+    openTransactions.set(db, 0);
   }
 }
 

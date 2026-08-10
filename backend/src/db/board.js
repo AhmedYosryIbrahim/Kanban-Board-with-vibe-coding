@@ -1,16 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { fail } from '../fail.js';
 import { transaction } from './index.js';
-
-/**
- * Throws an error carrying the HTTP status the route should answer with.
- * The catch-all handler in app.js turns it into a JSON response.
- */
-function fail(status, message) {
-  const error = new Error(message);
-  error.status = status;
-  throw error;
-}
 
 /** The signed in user's board. Board ids never come from the client. */
 export function getBoardForUser(db, username) {

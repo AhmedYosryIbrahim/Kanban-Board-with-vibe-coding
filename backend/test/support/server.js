@@ -7,11 +7,16 @@ import { openDatabase } from '../../src/db/index.js';
 
 const staticDir = fileURLToPath(new URL('../fixtures/web', import.meta.url));
 
-/** An in-memory database behind a listening app, already signed in. */
-export async function startTestServer() {
+/**
+ * An in-memory database behind a listening app, already signed in.
+ *
+ * Pass `callAi` to stub the model. No test may reach the network.
+ */
+export async function startTestServer({ callAi } = {}) {
   const db = openDatabase(':memory:');
   const server = createApp({
     db,
+    callAi,
     staticDir,
     sessionSecret: 'test-secret',
   }).listen(0);
