@@ -37,6 +37,26 @@ class BoardViewModel extends Notifier<Board> {
     );
   }
 
+  void updateCard(String columnId, String cardId, String title, String details) {
+    state = state.copyWith(
+      columns: [
+        for (final column in state.columns)
+          if (column.id == columnId)
+            column.copyWith(
+              cards: [
+                for (final card in column.cards)
+                  if (card.id == cardId)
+                    card.copyWith(title: title, details: details)
+                  else
+                    card,
+              ],
+            )
+          else
+            column,
+      ],
+    );
+  }
+
   void deleteCard(String columnId, String cardId) {
     state = state.copyWith(
       columns: [
