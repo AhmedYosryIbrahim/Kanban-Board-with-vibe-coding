@@ -1,0 +1,16 @@
+/// A single Kanban card with a title and details.
+class CardItem {
+  const CardItem({required this.id, required this.title, this.details = ''});
+
+  final String id;
+  final String title;
+  final String details;
+
+  CardItem copyWith({String? title, String? details}) {
+    return CardItem(
+      id: id,
+      title: title ?? this.title,
+      details: details ?? this.details,
+    );
+  }
+}
