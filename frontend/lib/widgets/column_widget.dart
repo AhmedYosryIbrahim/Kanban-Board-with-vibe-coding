@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/board_column.dart';
 import '../theme/app_colors.dart';
 import '../viewmodels/board_view_model.dart';
-import 'add_card_dialog.dart';
+import 'card_dialog.dart';
 import 'card_widget.dart';
 
 /// A single Kanban column: editable title, card list, and drop target.
@@ -248,6 +248,15 @@ class _ColumnWidgetState extends ConsumerState<ColumnWidget> {
             card: card,
             columnId: column.id,
             fromIndex: index,
+            onEdit: () => showEditCardDialog(
+              context: context,
+              card: card,
+              onSubmit: (title, details) {
+                ref
+                    .read(boardViewModelProvider.notifier)
+                    .updateCard(column.id, card.id, title, details);
+              },
+            ),
             onDelete: () => ref
                 .read(boardViewModelProvider.notifier)
                 .deleteCard(column.id, card.id),

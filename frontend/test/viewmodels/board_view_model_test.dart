@@ -50,6 +50,51 @@ void main() {
     expect(column.cards.last.details, 'Some details');
   });
 
+  test('updateCard changes only the target card', () {
+    final notifier = container.read(boardViewModelProvider.notifier);
+    final todo = container
+        .read(boardViewModelProvider)
+        .columns
+        .firstWhere((c) => c.id == 'todo');
+    final target = todo.cards.first;
+    final untouched = todo.cards.last;
+
+    notifier.updateCard('todo', target.id, 'Renamed', 'New details');
+
+    final cards = container
+        .read(boardViewModelProvider)
+        .columns
+        .firstWhere((c) => c.id == 'todo')
+        .cards;
+    final updated = cards.firstWhere((c) => c.id == target.id);
+    expect(updated.title, 'Renamed');
+    expect(updated.details, 'New details');
+    expect(cards.firstWhere((c) => c.id == untouched.id).title, untouched.title);
+    expect(cards.indexWhere((c) => c.id == target.id), 0);
+  });
+
+  test('updateCard on an unknown card id is a no-op', () {
+    final notifier = container.read(boardViewModelProvider.notifier);
+    final before = container
+        .read(boardViewModelProvider)
+        .columns
+        .firstWhere((c) => c.id == 'todo')
+        .cards
+        .map((c) => '${c.id}:${c.title}:${c.details}')
+        .toList();
+
+    notifier.updateCard('todo', 'does-not-exist', 'Renamed', 'New details');
+
+    final after = container
+        .read(boardViewModelProvider)
+        .columns
+        .firstWhere((c) => c.id == 'todo')
+        .cards
+        .map((c) => '${c.id}:${c.title}:${c.details}')
+        .toList();
+    expect(after, before);
+  });
+
   test('deleteCard removes the card from its column', () {
     final notifier = container.read(boardViewModelProvider.notifier);
     final cardId = container

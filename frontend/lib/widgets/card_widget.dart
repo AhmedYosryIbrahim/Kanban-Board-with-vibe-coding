@@ -10,12 +10,14 @@ class CardWidget extends StatelessWidget {
     required this.card,
     required this.columnId,
     required this.fromIndex,
+    required this.onEdit,
     required this.onDelete,
   });
 
   final CardItem card;
   final String columnId;
   final int fromIndex;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   @override
@@ -35,17 +37,18 @@ class CardWidget extends StatelessWidget {
       ),
       childWhenDragging: Opacity(
         opacity: 0.3,
-        child: _CardContent(card: card, onDelete: onDelete),
+        child: _CardContent(card: card, onEdit: onEdit, onDelete: onDelete),
       ),
-      child: _CardContent(card: card, onDelete: onDelete),
+      child: _CardContent(card: card, onEdit: onEdit, onDelete: onDelete),
     );
   }
 }
 
 class _CardContent extends StatelessWidget {
-  const _CardContent({required this.card, this.onDelete});
+  const _CardContent({required this.card, this.onEdit, this.onDelete});
 
   final CardItem card;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   @override
@@ -88,6 +91,19 @@ class _CardContent extends StatelessWidget {
               ],
             ),
           ),
+          if (onEdit != null)
+            InkWell(
+              onTap: onEdit,
+              borderRadius: BorderRadius.circular(4),
+              child: const Padding(
+                padding: EdgeInsets.all(2),
+                child: Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                  color: AppColors.grayText,
+                ),
+              ),
+            ),
           if (onDelete != null)
             InkWell(
               onTap: onDelete,
