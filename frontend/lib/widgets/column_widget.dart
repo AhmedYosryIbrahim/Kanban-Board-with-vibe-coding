@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/board_column.dart';
 import '../theme/app_colors.dart';
 import '../viewmodels/board_view_model.dart';
+import 'board_action.dart';
 import 'card_dialog.dart';
 import 'card_widget.dart';
 
@@ -50,11 +51,14 @@ class _ColumnWidgetState extends ConsumerState<ColumnWidget> {
 
   void _commitTitle() {
     final newTitle = _titleController.text.trim();
-    if (newTitle.isNotEmpty) {
-      ref
-          .read(boardViewModelProvider.notifier)
-          .renameColumn(widget.column.id, newTitle);
-    } else {
+    if (newTitle.isNotEmpty && newTitle != widget.column.title) {
+      runBoardAction(
+        context,
+        () => ref
+            .read(boardViewModelProvider.notifier)
+            .renameColumn(widget.column.id, newTitle),
+      );
+    } else if (newTitle.isEmpty) {
       _titleController.text = widget.column.title;
     }
     setState(() => _isEditingTitle = false);
@@ -85,11 +89,12 @@ class _ColumnWidgetState extends ConsumerState<ColumnWidget> {
           TextButton.icon(
             onPressed: () => showAddCardDialog(
               context: context,
-              onSubmit: (title, details) {
-                ref
+              onSubmit: (title, details) => runBoardAction(
+                context,
+                () => ref
                     .read(boardViewModelProvider.notifier)
-                    .addCard(column.id, title, details);
-              },
+                    .addCard(column.id, title, details),
+              ),
             ),
             icon: const Icon(Icons.add, size: 18),
             label: const Text('Add card'),
@@ -152,14 +157,17 @@ class _ColumnWidgetState extends ConsumerState<ColumnWidget> {
       },
       onAcceptWithDetails: (details) {
         final targetIndex = _calculateInsertIndex(details.offset, column);
-        ref
-            .read(boardViewModelProvider.notifier)
-            .moveCard(
-              cardId: details.data.cardId,
-              fromColumnId: details.data.fromColumnId,
-              toColumnId: column.id,
-              targetIndex: targetIndex,
-            );
+        runBoardAction(
+          context,
+          () => ref
+              .read(boardViewModelProvider.notifier)
+              .moveCard(
+                cardId: details.data.cardId,
+                fromColumnId: details.data.fromColumnId,
+                toColumnId: column.id,
+                targetIndex: targetIndex,
+              ),
+        );
 
         setState(() {
           _isDraggingOverColumn = false;
@@ -251,15 +259,19 @@ class _ColumnWidgetState extends ConsumerState<ColumnWidget> {
             onEdit: () => showEditCardDialog(
               context: context,
               card: card,
-              onSubmit: (title, details) {
-                ref
+              onSubmit: (title, details) => runBoardAction(
+                context,
+                () => ref
                     .read(boardViewModelProvider.notifier)
-                    .updateCard(column.id, card.id, title, details);
-              },
+                    .updateCard(column.id, card.id, title, details),
+              ),
             ),
-            onDelete: () => ref
-                .read(boardViewModelProvider.notifier)
-                .deleteCard(column.id, card.id),
+            onDelete: () => runBoardAction(
+              context,
+              () => ref
+                  .read(boardViewModelProvider.notifier)
+                  .deleteCard(column.id, card.id),
+            ),
           ),
         ),
       );

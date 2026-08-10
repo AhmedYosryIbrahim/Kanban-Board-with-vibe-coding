@@ -1,21 +1,25 @@
-import '../models/board.dart';
-import '../models/board_column.dart';
-import '../models/card_item.dart';
+import 'package:kanban_frontend/models/board.dart';
+import 'package:kanban_frontend/models/board_column.dart';
+import 'package:kanban_frontend/models/card_item.dart';
 
-/// Initial dummy data so the board opens populated for demo purposes.
-Board buildDummyBoard() {
-  return Board(
+/// The board the backend seeds, used as test data now that the app itself no
+/// longer ships dummy data.
+Board buildFixtureBoard() {
+  return const Board(
+    id: 1,
+    name: 'Product Roadmap',
+    subtitle: 'Q4 delivery board',
     columns: [
       BoardColumn(
         id: 'todo',
         title: 'To Do',
         cards: [
-          const CardItem(
+          CardItem(
             id: 'c1',
             title: 'Design onboarding flow',
             details: 'Sketch wireframes for the new user onboarding.',
           ),
-          const CardItem(
+          CardItem(
             id: 'c2',
             title: 'Set up CI pipeline',
             details: 'Configure automated build and test checks.',
@@ -26,7 +30,7 @@ Board buildDummyBoard() {
         id: 'in-progress',
         title: 'In Progress',
         cards: [
-          const CardItem(
+          CardItem(
             id: 'c3',
             title: 'Implement drag and drop',
             details: 'Allow cards to move between columns.',
@@ -37,7 +41,7 @@ Board buildDummyBoard() {
         id: 'review',
         title: 'Review',
         cards: [
-          const CardItem(
+          CardItem(
             id: 'c4',
             title: 'Code review: auth module',
             details: 'Check for security issues before merging.',
@@ -48,7 +52,7 @@ Board buildDummyBoard() {
         id: 'blocked',
         title: 'Blocked',
         cards: [
-          const CardItem(
+          CardItem(
             id: 'c5',
             title: 'Waiting on API keys',
             details: 'Blocked until third-party access is granted.',
@@ -59,7 +63,7 @@ Board buildDummyBoard() {
         id: 'done',
         title: 'Done',
         cards: [
-          const CardItem(
+          CardItem(
             id: 'c6',
             title: 'Project kickoff meeting',
             details: 'Aligned on scope and timeline with stakeholders.',

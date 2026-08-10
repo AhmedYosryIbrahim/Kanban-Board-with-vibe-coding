@@ -1,122 +1,176 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 
-import '../data/dummy_data.dart';
+import '../data/board_repository.dart';
 import '../models/board.dart';
 import '../models/card_item.dart';
 
-const _uuid = Uuid();
-
 /// Owns the board state and all mutations (MVVM ViewModel).
-class BoardViewModel extends Notifier<Board> {
+///
+/// Mutations apply to local state first and call the backend after, so the UI
+/// responds immediately. If the call fails the previous state is restored and
+/// the error is rethrown for the caller to surface.
+class BoardViewModel extends AsyncNotifier<Board> {
   @override
-  Board build() => buildDummyBoard();
+  Future<Board> build() => _repository.fetchBoard();
 
-  void renameColumn(String columnId, String newTitle) {
-    state = state.copyWith(
-      columns: [
-        for (final column in state.columns)
-          if (column.id == columnId)
-            column.copyWith(title: newTitle)
-          else
-            column,
-      ],
+  BoardRepository get _repository => ref.read(boardRepositoryProvider);
+
+  Board get _board => state.value!;
+
+  Future<void> _apply(Board next, Future<void> Function() call) async {
+    final previous = _board;
+    state = AsyncData(next);
+
+    try {
+      await call();
+    } catch (error) {
+      state = AsyncData(previous);
+      rethrow;
+    }
+  }
+
+  Future<void> refresh() async {
+    state = AsyncData(await _repository.fetchBoard());
+  }
+
+  Future<void> renameColumn(String columnId, String newTitle) {
+    return _apply(
+      _board.copyWith(
+        columns: [
+          for (final column in _board.columns)
+            if (column.id == columnId)
+              column.copyWith(title: newTitle)
+            else
+              column,
+        ],
+      ),
+      () => _repository.renameColumn(columnId, newTitle),
     );
   }
 
-  void addCard(String columnId, String title, String details) {
-    final newCard = CardItem(id: _uuid.v4(), title: title, details: details);
-    state = state.copyWith(
-      columns: [
-        for (final column in state.columns)
-          if (column.id == columnId)
-            column.copyWith(cards: [...column.cards, newCard])
-          else
-            column,
-      ],
+  /// Creates through the backend first, because the card id is assigned there.
+  Future<void> addCard(String columnId, String title, String details) async {
+    final card = await _repository.createCard(columnId, title, details);
+
+    state = AsyncData(
+      _board.copyWith(
+        columns: [
+          for (final column in _board.columns)
+            if (column.id == columnId)
+              column.copyWith(cards: [...column.cards, card])
+            else
+              column,
+        ],
+      ),
     );
   }
 
-  void updateCard(String columnId, String cardId, String title, String details) {
-    state = state.copyWith(
-      columns: [
-        for (final column in state.columns)
-          if (column.id == columnId)
-            column.copyWith(
-              cards: [
-                for (final card in column.cards)
-                  if (card.id == cardId)
-                    card.copyWith(title: title, details: details)
-                  else
-                    card,
-              ],
-            )
-          else
-            column,
-      ],
+  Future<void> updateCard(
+    String columnId,
+    String cardId,
+    String title,
+    String details,
+  ) {
+    return _apply(
+      _board.copyWith(
+        columns: [
+          for (final column in _board.columns)
+            if (column.id == columnId)
+              column.copyWith(
+                cards: [
+                  for (final card in column.cards)
+                    if (card.id == cardId)
+                      card.copyWith(title: title, details: details)
+                    else
+                      card,
+                ],
+              )
+            else
+              column,
+        ],
+      ),
+      () => _repository.updateCard(cardId, title, details),
     );
   }
 
-  void deleteCard(String columnId, String cardId) {
-    state = state.copyWith(
-      columns: [
-        for (final column in state.columns)
-          if (column.id == columnId)
-            column.copyWith(
-              cards: column.cards.where((c) => c.id != cardId).toList(),
-            )
-          else
-            column,
-      ],
+  Future<void> deleteCard(String columnId, String cardId) {
+    return _apply(
+      _board.copyWith(
+        columns: [
+          for (final column in _board.columns)
+            if (column.id == columnId)
+              column.copyWith(
+                cards: column.cards.where((c) => c.id != cardId).toList(),
+              )
+            else
+              column,
+        ],
+      ),
+      () => _repository.deleteCard(cardId),
     );
   }
 
-  void moveCard({
+  Future<void> moveCard({
     required String cardId,
     required String fromColumnId,
     required String toColumnId,
     int? targetIndex,
   }) {
-    final fromColumn = state.columns.firstWhere((c) => c.id == fromColumnId);
+    final fromColumn = _board.columns.firstWhere((c) => c.id == fromColumnId);
     final fromIndex = fromColumn.cards.indexWhere((c) => c.id == cardId);
-    if (fromIndex == -1) return;
+    if (fromIndex == -1) return Future.value();
     final card = fromColumn.cards[fromIndex];
 
+    late final Board next;
+    late final int finalIndex;
+
     if (fromColumnId == toColumnId) {
-      final cardsWithoutDragged = [
+      final withoutDragged = [
         for (final current in fromColumn.cards)
           if (current.id != cardId) current,
       ];
-      var index = targetIndex ?? cardsWithoutDragged.length;
-      if (index > fromIndex) {
-        index -= 1;
-      }
-      final reordered = _insertAt(cardsWithoutDragged, card, index);
+      var index = targetIndex ?? withoutDragged.length;
+      // The card is removed before reinsertion, so a downward move lands one
+      // slot early without this.
+      if (index > fromIndex) index -= 1;
+      finalIndex = index.clamp(0, withoutDragged.length);
 
-      state = state.copyWith(
+      next = _board.copyWith(
         columns: [
-          for (final column in state.columns)
+          for (final column in _board.columns)
             if (column.id == fromColumnId)
-              column.copyWith(cards: reordered)
+              column.copyWith(
+                cards: _insertAt(withoutDragged, card, finalIndex),
+              )
             else
               column,
         ],
       );
-      return;
+    } else {
+      final toColumn = _board.columns.firstWhere((c) => c.id == toColumnId);
+      finalIndex = (targetIndex ?? toColumn.cards.length).clamp(
+        0,
+        toColumn.cards.length,
+      );
+
+      next = _board.copyWith(
+        columns: [
+          for (final column in _board.columns)
+            if (column.id == fromColumnId)
+              column.copyWith(
+                cards: column.cards.where((c) => c.id != cardId).toList(),
+              )
+            else if (column.id == toColumnId)
+              column.copyWith(cards: _insertAt(column.cards, card, finalIndex))
+            else
+              column,
+        ],
+      );
     }
 
-    state = state.copyWith(
-      columns: [
-        for (final column in state.columns)
-          if (column.id == fromColumnId)
-            column.copyWith(
-              cards: column.cards.where((c) => c.id != cardId).toList(),
-            )
-          else if (column.id == toColumnId)
-            column.copyWith(cards: _insertAt(column.cards, card, targetIndex))
-          else
-            column,
-      ],
+    return _apply(
+      next,
+      () => _repository.moveCard(cardId, toColumnId, finalIndex),
     );
   }
 
@@ -128,6 +182,6 @@ class BoardViewModel extends Notifier<Board> {
   }
 }
 
-final boardViewModelProvider = NotifierProvider<BoardViewModel, Board>(
+final boardViewModelProvider = AsyncNotifierProvider<BoardViewModel, Board>(
   BoardViewModel.new,
 );

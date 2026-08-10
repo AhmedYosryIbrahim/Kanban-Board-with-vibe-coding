@@ -3,7 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kanban_frontend/data/auth_repository.dart';
+import 'package:kanban_frontend/data/board_repository.dart';
 import 'package:kanban_frontend/main.dart';
+
+import 'fake_board_repository.dart';
+
+export 'fake_board_repository.dart';
 
 /// In-memory stand-in for [AuthRepository].
 ///
@@ -43,18 +48,42 @@ void useWideSurface(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-/// Pumps the real app with the session check answered by [auth].
-Future<void> pumpApp(WidgetTester tester, {required AuthRepository auth}) async {
+/// Pumps the real app with the session check answered by [auth] and the board
+/// served by [board].
+///
+/// Pass `settle: false` to inspect a transient state such as the loading
+/// spinner, which `pumpAndSettle` would otherwise run straight past.
+Future<void> pumpApp(
+  WidgetTester tester, {
+  required AuthRepository auth,
+  BoardRepository? board,
+  bool settle = true,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [authRepositoryProvider.overrideWithValue(auth)],
+      overrides: [
+        authRepositoryProvider.overrideWithValue(auth),
+        boardRepositoryProvider.overrideWithValue(
+          board ?? FakeBoardRepository(),
+        ),
+      ],
       child: const KanbanApp(),
     ),
   );
-  await tester.pumpAndSettle();
+
+  if (settle) await tester.pumpAndSettle();
 }
 
 /// Pumps the app already signed in, for tests about the board itself.
-Future<void> pumpSignedInApp(WidgetTester tester) {
-  return pumpApp(tester, auth: FakeAuthRepository(signedInAs: 'user'));
+Future<void> pumpSignedInApp(
+  WidgetTester tester, {
+  BoardRepository? board,
+  bool settle = true,
+}) {
+  return pumpApp(
+    tester,
+    auth: FakeAuthRepository(signedInAs: 'user'),
+    board: board,
+    settle: settle,
+  );
 }

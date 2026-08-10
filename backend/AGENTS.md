@@ -3,8 +3,8 @@
 Serves the built Flutter web app at `/` and the JSON API under `/api`. Owns the
 SQLite database and the OpenRouter AI calls.
 
-Status: static serving, `/api/health`, and the session routes are implemented.
-The database and AI sections below are the contract that Parts 6-9 of
+Status: static serving, sessions, the database, and the board routes are
+implemented. The AI section below is the contract that Parts 8-9 of
 `docs/PLAN.md` build against.
 
 ## Toolchain
@@ -34,13 +34,14 @@ backend/
     server.js            reads env, calls createApp, listens
     app.js               createApp({ staticDir, db }) - builds the express app, no listen
     db/
-      index.js           openDatabase(path) - opens, applies schema, seeds
+      index.js           openDatabase(path), transaction(db, work)
       schema.sql         table definitions
+      board.js           every read and write against a board
     middleware/
       auth.js            requireAuth - rejects unauthenticated /api requests
     routes/
       auth.js            login, logout, me
-      board.js           board read + column and card mutations
+      board.js           thin HTTP layer over db/board.js
       chat.js            AI chat
     ai/
       openrouter.js      callOpenRouter(messages, schema)
@@ -72,11 +73,16 @@ session cookie and return 401 otherwise.
 | GET | `/api/me` | - | `{ username }` |
 | GET | `/api/board` | - | full board JSON |
 | PATCH | `/api/columns/:id` | `{ title }` | updated column |
-| POST | `/api/cards` | `{ columnId, title, details }` | created card |
+| POST | `/api/cards` | `{ columnId, title, details }` | 201, created card |
 | PATCH | `/api/cards/:id` | `{ title?, details? }` | updated card |
 | DELETE | `/api/cards/:id` | - | 204 |
-| POST | `/api/cards/:id/move` | `{ toColumnId, position }` | updated board |
+| POST | `/api/cards/:id/move` | `{ toColumnId, position }` | the whole board |
 | POST | `/api/chat` | `{ message }` | `{ reply, boardChanged }` |
+
+`position` on a move is the card's index in the destination column **after** the
+move. Out of range values clamp rather than fail, so a drop past the end of a
+column lands at the end. This matches what the Flutter drag code already
+computes, including its decrement for same-column downward moves.
 
 The board JSON returned by `GET /api/board` matches the shape the Flutter
 models expect:
@@ -127,6 +133,11 @@ Card ordering is an integer `position` per column, contiguous from 0.
 Moves reindex the affected columns inside a transaction. See `docs/DATABASE.md`
 for the full schema and rationale.
 
+All board reads and writes live in `db/board.js`, not in the route handlers, so
+Part 9 can apply the AI's operations through exactly the same code the HTTP API
+uses. Every function there takes the board resolved from the session, so a
+column or card belonging to someone else answers 404 rather than being touched.
+
 ## AI
 
 OpenRouter, model `openai/gpt-oss-120b`, key from `OPENROUTER_API_KEY`. Calls
@@ -172,8 +183,10 @@ cd ../backend && STATIC_DIR=../frontend/build/web npm start
 ## Conventions
 
 - No TypeScript, no build step, no transpiler.
-- Errors: `res.status(n).json({ error: "message" })`. No custom error classes,
-  no error middleware beyond one catch-all.
+- Errors: `res.status(n).json({ error: "message" })`. Data functions call
+  `fail(status, message)` in `db/board.js`, which throws a plain `Error` with a
+  `status` property; the single catch-all in `app.js` turns it into that JSON
+  shape. No custom error classes, no other error middleware.
 - Validate only what the route actually needs. No schema validation library.
 - Every route gets a `node:test` case covering the success path and its main
   failure path. Use `node:test`'s built-in assertions and Node's global `fetch`

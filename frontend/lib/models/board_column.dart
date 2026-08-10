@@ -8,6 +8,17 @@ class BoardColumn {
     this.cards = const [],
   });
 
+  factory BoardColumn.fromJson(Map<String, dynamic> json) {
+    return BoardColumn(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      cards: [
+        for (final card in json['cards'] as List<dynamic>)
+          CardItem.fromJson(card as Map<String, dynamic>),
+      ],
+    );
+  }
+
   final String id;
   final String title;
   final List<CardItem> cards;

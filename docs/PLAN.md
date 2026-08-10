@@ -47,8 +47,8 @@ scripts/                 start/stop for Mac, Linux, Windows
 - [x] Part 3: Add in Frontend
 - [x] Part 4: Fake user sign in
 - [x] Part 5: Database modeling
-- [ ] Part 6: Backend
-- [ ] Part 7: Frontend + Backend
+- [x] Part 6: Backend
+- [x] Part 7: Frontend + Backend
 - [ ] Part 8: AI connectivity
 - [ ] Part 9: AI board updates
 - [ ] Part 10: AI chat sidebar
@@ -313,46 +313,70 @@ Thorough backend unit tests. The database is created if it does not exist.
 
 ## Checklist
 
-- [ ] `backend/src/db/schema.sql` from the approved proposal, using
+- [x] `backend/src/db/schema.sql` from the approved proposal, using
       `CREATE TABLE IF NOT EXISTS`
-- [ ] `backend/src/db/index.js` - `openDatabase(path)` opens via `node:sqlite`,
+- [x] `backend/src/db/index.js` - `openDatabase(path)` opens via `node:sqlite`,
       sets `PRAGMA foreign_keys = ON`, applies the schema, seeds on first run
-- [ ] `DATABASE_PATH` env var, default `data/kanban.db`, directory created if
+- [x] `DATABASE_PATH` env var, default `data/kanban.db`, directory created if
       absent
-- [ ] `createApp(db)` takes the database handle so tests can pass `:memory:`
-- [ ] `GET /api/board` - board with columns and cards, ordered by position
-- [ ] `PATCH /api/columns/:id` - rename, rejects an empty title
-- [ ] `POST /api/cards` - create at the end of the column
-- [ ] `PATCH /api/cards/:id` - update title and details
-- [ ] `DELETE /api/cards/:id`
-- [ ] `POST /api/cards/:id/move` - `{ toColumnId, position }`, reindexes both
+- [x] `createApp({ db })` takes the database handle so tests can pass `:memory:`
+- [x] `backend/src/db/board.js` holds every board read and write, so Part 9 can
+      apply the AI's operations through the same code the HTTP API uses
+- [x] `GET /api/board` - board with columns and cards, ordered by position
+- [x] `PATCH /api/columns/:id` - rename, rejects an empty title
+- [x] `POST /api/cards` - create at the end of the column
+- [x] `PATCH /api/cards/:id` - update title and details
+- [x] `DELETE /api/cards/:id`
+- [x] `POST /api/cards/:id/move` - `{ toColumnId, position }`, reindexes both
       affected columns inside a transaction
-- [ ] Every route scoped to the signed-in user's board - no cross-user access
-- [ ] Consistent errors: `res.status(n).json({ error })`
+- [x] Every route scoped to the signed-in user's board - no cross-user access
+- [x] Consistent errors: `res.status(n).json({ error })` via one catch-all
 
 ## Tests
 
-- [ ] `openDatabase` creates the file when it does not exist
-- [ ] `openDatabase` on an existing database does not duplicate the seed
-- [ ] `GET /api/board` returns the seeded 5 columns in order
-- [ ] Rename a column, re-read the board, assert it persisted
-- [ ] Rename to an empty title returns 400
-- [ ] Create a card, assert it lands last in its column
-- [ ] Update a card's title and details
-- [ ] Delete a card, assert it is gone and remaining positions stay contiguous
-- [ ] Move a card to another column at index 0, assert order in both columns
-- [ ] Move a card within its column downward, assert the off-by-one is handled
-- [ ] Move to a nonexistent column returns 400
-- [ ] Operating on a nonexistent card id returns 404
-- [ ] Every mutating route returns 401 without a session cookie
-- [ ] Deleting a board cascades to its columns and cards
+- [x] `openDatabase` creates the file and its parent directory when missing
+- [x] `openDatabase` on an existing database does not duplicate the seed
+- [x] The seed creates 5 ordered columns and 6 cards, with opaque uuid ids
+- [x] `GET /api/board` returns the seeded 5 columns in order with their cards
+- [x] Rename a column, re-read the board, assert it persisted
+- [x] Rename to an empty title returns 400 and changes nothing
+- [x] Rename an unknown column returns 404
+- [x] Create a card, assert it lands last in its column
+- [x] Create with an empty title, or into an unknown column, returns 400
+- [x] Update a card's title and details, and details alone
+- [x] Delete a card, assert it is gone and remaining positions stay contiguous
+- [x] Move a card to another column at index 0, assert order in both columns
+- [x] Move a card within its column downward and upward, asserting the shift
+- [x] Positions past the end and below zero clamp instead of failing
+- [x] Move to a nonexistent column returns 400 and changes nothing
+- [x] Operating on a nonexistent card id returns 404
+- [x] Every board route returns 401 without a session cookie
+- [x] Deleting a board cascades to its columns and cards
+- [x] Foreign keys are enforced, and the message role check rejects bad roles
+- [x] A card, column, or insert targeting another user's board answers 404/400
+      and leaves their data untouched
+- [x] `npm test` 46/46
 
 ## Success criteria
 
-- `npm test` in `backend/` passes with every case above
-- Deleting `data/kanban.db` and restarting recreates a working seeded database
-- Positions are contiguous from 0 in every column after any sequence of moves
-- No route can read or write another user's board
+- [x] `npm test` in `backend/` passes with every case above
+- [x] Deleting the database file and restarting recreates a working seeded
+      database. Verified by removing the `kanban-data` volume and rebuilding.
+- [x] Positions are contiguous from 0 in every column after any sequence of
+      moves, asserted by `assertContiguous` after each ordering test
+- [x] No route can read or write another user's board
+- [x] Against the running container: a column rename and a new card both
+      survived `stop.sh` then `start.sh`, and the seed did not re-run
+
+## Notes
+
+`position` on a move means the card's index in the destination column after the
+move, and out of range values clamp. That matches what the Flutter drag code
+already computes, including its decrement for same-column downward moves, so
+Part 7 can send its existing index straight through.
+
+The frontend is untouched in this part, so the browser still shows dummy data
+and none of these routes are called yet. Part 7 connects them.
 
 ---
 
@@ -362,37 +386,62 @@ The frontend uses the real API. The board becomes persistent.
 
 ## Checklist
 
-- [ ] `lib/data/board_repository.dart` - one class wrapping the board endpoints
-- [ ] `BoardViewModel` becomes async: loads from `GET /api/board` on build,
-      calls the API on every mutation
-- [ ] Loading and error states on `BoardScreen`
-- [ ] Column rename persists via `PATCH /api/columns/:id`
-- [ ] Card add, edit, delete, and move all persist
-- [ ] Drag and drop sends the move, and reverts the local state if the call fails
-- [ ] Delete `lib/data/dummy_data.dart` from the app path, or keep it only as
-      test fixture data
-- [ ] Board name and subtitle come from the API, not hardcoded strings
+- [x] `lib/data/board_repository.dart` - one class wrapping the board endpoints
+- [x] `BoardViewModel` becomes an `AsyncNotifier`: loads from `GET /api/board`
+      on build, calls the API on every mutation
+- [x] Models gain `fromJson`, and `Board` carries `id`, `name`, `subtitle`
+- [x] Loading and error states on `BoardScreen`, with a retry button
+- [x] Column rename persists via `PATCH /api/columns/:id`
+- [x] Card add, edit, delete, and move all persist
+- [x] Mutations apply optimistically and revert if the call fails
+- [x] `lib/widgets/board_action.dart` surfaces a failed mutation as a SnackBar,
+      so a revert is explained rather than silent
+- [x] `lib/data/dummy_data.dart` removed from the app, kept as
+      `test/support/board_fixture.dart`
+- [x] Board name and subtitle come from the API, not hardcoded strings
 
 ## Tests
 
-- [ ] Repository unit tests against a mocked HTTP client for each endpoint
-- [ ] Viewmodel tests with a fake repository: load, add, edit, delete, move
-- [ ] Viewmodel test: a failed move reverts the optimistic local change
-- [ ] Widget test: the board renders from a fake repository, not dummy data
-- [ ] Widget test: the loading state appears before data arrives
-- [ ] Widget test: the error state appears when the load fails
-- [ ] Backend integration test: full lifecycle over HTTP - login, read board,
-      add a card, move it, edit it, delete it, confirm each read-back
+- [x] Repository unit tests against a `MockClient` for each endpoint, asserting
+      method, path, and body
+- [x] Repository tests for error mapping and base-URI resolution
+- [x] Viewmodel tests with a fake repository: load, add, edit, delete, move,
+      and the same-column decrement in both directions
+- [x] Viewmodel tests: a failed move, rename, delete, and add all revert
+- [x] Viewmodel test: a failed load surfaces as an error state
+- [x] Widget test: the board renders from a fake repository, and the old
+      hardcoded strings and dummy cards are gone
+- [x] Widget test: the loading spinner appears before data arrives
+- [x] Widget test: the error state appears when the load fails, and retry works
+- [x] Widget test: a failed mutation reverts and reports the failure
+- [x] Backend integration test: one ordered lifecycle over HTTP - read, create,
+      move, edit, rename, delete, each step reading back what the last wrote
+- [x] `flutter test` 42/42, `npm test` 53/53
 
 ## Success criteria
 
-- Every board change survives a browser reload
-- Every board change survives `./scripts/stop.sh` then `./scripts/start.sh`,
-  proving the `kanban-data` volume works
-- Two browser tabs signed in as the same user both show a change after reload
-- No dummy data is reachable from the running app
+- [x] Every board change survives a browser reload. A card dragged between
+      columns in the browser was still there after a reload, and confirmed
+      present in the SQLite file with contiguous positions.
+- [x] Every board change survives `./scripts/stop.sh` then `./scripts/start.sh`.
+      A column rename and a new card made in Part 6 came back after a full
+      image rebuild, and the seed did not re-run.
+- [x] No dummy data is reachable from the running app
 
----
+## Notes
+
+Riverpod 3 auto-disposes providers that have no listeners. This bit the tests:
+`container.read(provider.future)` creates no listener, so the provider was torn
+down mid-build and the future never completed. Tests now hold a
+`container.listen`, and the failed-load test asserts on the `AsyncError` state
+rather than the future, which never completes when the build throws. In the app
+this behaviour is wanted - leaving the board screen disposes the provider, so
+signing back in refetches instead of showing a stale board.
+
+`addCard` is the one mutation that is not optimistic. The card id is assigned by
+the backend, so inventing a temporary id locally would mean reconciling it
+afterwards; a round trip before inserting is simpler and imperceptible from a
+dialog.
 
 # Part 8: AI connectivity
 

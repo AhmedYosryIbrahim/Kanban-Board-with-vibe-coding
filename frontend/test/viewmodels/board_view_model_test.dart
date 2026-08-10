@@ -1,176 +1,263 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kanban_frontend/data/board_repository.dart';
+import 'package:kanban_frontend/models/board.dart';
 import 'package:kanban_frontend/viewmodels/board_view_model.dart';
+
+import '../support/fake_board_repository.dart';
 
 void main() {
   late ProviderContainer container;
+  late FakeBoardRepository repository;
 
   setUp(() {
-    container = ProviderContainer();
+    repository = FakeBoardRepository();
+    container = ProviderContainer(
+      overrides: [boardRepositoryProvider.overrideWithValue(repository)],
+    );
     addTearDown(container.dispose);
   });
 
-  test('board starts with 5 columns populated with dummy data', () {
-    final board = container.read(boardViewModelProvider);
-
-    expect(board.columns, hasLength(5));
-    expect(board.columns.every((c) => c.cards.isNotEmpty), isTrue);
-  });
-
-  test('renameColumn updates only the target column title', () {
-    final notifier = container.read(boardViewModelProvider.notifier);
-
-    notifier.renameColumn('todo', 'Backlog');
-
-    final board = container.read(boardViewModelProvider);
-    expect(board.columns.firstWhere((c) => c.id == 'todo').title, 'Backlog');
-    expect(
-      board.columns.firstWhere((c) => c.id == 'done').title,
-      isNot('Backlog'),
+  /// Riverpod 3 auto-disposes providers with no listeners, and a bare
+  /// `read(provider.future)` does not create one - the provider would be torn
+  /// down mid-build. Holding a subscription keeps it alive for the test.
+  Future<void> load() {
+    container.listen(
+      boardViewModelProvider,
+      (previous, next) {},
+      onError: (error, stackTrace) {},
     );
+    return container.read(boardViewModelProvider.future);
+  }
+
+  Board board() => container.read(boardViewModelProvider).value!;
+
+  List<String> titlesIn(String columnId) => board().columns
+      .firstWhere((c) => c.id == columnId)
+      .cards
+      .map((c) => c.title)
+      .toList();
+
+  BoardViewModel notifier() =>
+      container.read(boardViewModelProvider.notifier);
+
+  test('the board is loaded from the repository', () async {
+    await load();
+
+    expect(repository.calls, ['fetchBoard']);
+    expect(board().name, 'Product Roadmap');
+    expect(board().subtitle, 'Q4 delivery board');
+    expect(board().columns, hasLength(5));
   });
 
-  test('addCard appends a new card to the target column', () {
-    final notifier = container.read(boardViewModelProvider.notifier);
-    final before = container
-        .read(boardViewModelProvider)
-        .columns
-        .firstWhere((c) => c.id == 'todo')
-        .cards
-        .length;
+  test('a failed load surfaces as an error state', () async {
+    repository.loadError = const BoardException('Not signed in');
 
-    notifier.addCard('todo', 'New task', 'Some details');
+    container.listen(
+      boardViewModelProvider,
+      (previous, next) {},
+      onError: (error, stackTrace) {},
+    );
+    for (var i = 0;
+        i < 10 && container.read(boardViewModelProvider).isLoading;
+        i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
 
-    final column = container
-        .read(boardViewModelProvider)
-        .columns
-        .firstWhere((c) => c.id == 'todo');
-    expect(column.cards.length, before + 1);
-    expect(column.cards.last.title, 'New task');
-    expect(column.cards.last.details, 'Some details');
+    // Asserted on the state rather than `provider.future`, which never
+    // completes when the build fails - the UI renders this state, not that
+    // future.
+    final state = container.read(boardViewModelProvider);
+    expect(state.hasError, isTrue);
+    expect(state.error, isA<BoardException>());
   });
 
-  test('updateCard changes only the target card', () {
-    final notifier = container.read(boardViewModelProvider.notifier);
-    final todo = container
-        .read(boardViewModelProvider)
-        .columns
-        .firstWhere((c) => c.id == 'todo');
-    final target = todo.cards.first;
-    final untouched = todo.cards.last;
+  test('renameColumn updates only the target column and calls the API',
+      () async {
+    await load();
 
-    notifier.updateCard('todo', target.id, 'Renamed', 'New details');
+    await notifier().renameColumn('todo', 'Backlog');
 
-    final cards = container
-        .read(boardViewModelProvider)
-        .columns
-        .firstWhere((c) => c.id == 'todo')
-        .cards;
-    final updated = cards.firstWhere((c) => c.id == target.id);
-    expect(updated.title, 'Renamed');
-    expect(updated.details, 'New details');
-    expect(cards.firstWhere((c) => c.id == untouched.id).title, untouched.title);
-    expect(cards.indexWhere((c) => c.id == target.id), 0);
+    expect(board().columns.firstWhere((c) => c.id == 'todo').title, 'Backlog');
+    expect(board().columns.firstWhere((c) => c.id == 'done').title, 'Done');
+    expect(repository.calls, contains('renameColumn:todo:Backlog'));
   });
 
-  test('updateCard on an unknown card id is a no-op', () {
-    final notifier = container.read(boardViewModelProvider.notifier);
-    final before = container
-        .read(boardViewModelProvider)
-        .columns
-        .firstWhere((c) => c.id == 'todo')
-        .cards
-        .map((c) => '${c.id}:${c.title}:${c.details}')
-        .toList();
+  test('addCard appends the card the backend created', () async {
+    await load();
 
-    notifier.updateCard('todo', 'does-not-exist', 'Renamed', 'New details');
+    await notifier().addCard('todo', 'Third task', 'Some details');
 
-    final after = container
-        .read(boardViewModelProvider)
-        .columns
-        .firstWhere((c) => c.id == 'todo')
-        .cards
-        .map((c) => '${c.id}:${c.title}:${c.details}')
-        .toList();
-    expect(after, before);
+    final cards = board().columns.firstWhere((c) => c.id == 'todo').cards;
+    expect(cards.last.title, 'Third task');
+    expect(cards.last.details, 'Some details');
+    expect(cards.last.id, 'server-card-1');
+    expect(repository.calls, contains('createCard:todo:Third task'));
   });
 
-  test('deleteCard removes the card from its column', () {
-    final notifier = container.read(boardViewModelProvider.notifier);
-    final cardId = container
-        .read(boardViewModelProvider)
-        .columns
-        .firstWhere((c) => c.id == 'todo')
-        .cards
-        .first
-        .id;
+  test('a failed addCard leaves the board untouched', () async {
+    await load();
+    repository.failNextWith = const BoardException('Title is required');
 
-    notifier.deleteCard('todo', cardId);
+    await expectLater(
+      notifier().addCard('todo', 'Third task', ''),
+      throwsA(isA<BoardException>()),
+    );
 
-    final column = container
-        .read(boardViewModelProvider)
-        .columns
-        .firstWhere((c) => c.id == 'todo');
-    expect(column.cards.any((c) => c.id == cardId), isFalse);
+    expect(titlesIn('todo'), [
+      'Design onboarding flow',
+      'Set up CI pipeline',
+    ]);
   });
 
-  test('moveCard transfers a card between columns', () {
-    final notifier = container.read(boardViewModelProvider.notifier);
-    final cardId = container
-        .read(boardViewModelProvider)
-        .columns
-        .firstWhere((c) => c.id == 'todo')
-        .cards
-        .first
-        .id;
+  test('updateCard changes only the target card', () async {
+    await load();
 
-    notifier.moveCard(cardId: cardId, fromColumnId: 'todo', toColumnId: 'done');
+    await notifier().updateCard('todo', 'c1', 'Renamed', 'New details');
 
-    final board = container.read(boardViewModelProvider);
-    final fromColumn = board.columns.firstWhere((c) => c.id == 'todo');
-    final toColumn = board.columns.firstWhere((c) => c.id == 'done');
-    expect(fromColumn.cards.any((c) => c.id == cardId), isFalse);
-    expect(toColumn.cards.any((c) => c.id == cardId), isTrue);
+    final cards = board().columns.firstWhere((c) => c.id == 'todo').cards;
+    expect(cards.first.title, 'Renamed');
+    expect(cards.first.details, 'New details');
+    expect(cards.last.title, 'Set up CI pipeline');
+    expect(repository.calls, contains('updateCard:c1:Renamed'));
   });
 
-  test('moveCard reorders cards within the same column', () {
-    final notifier = container.read(boardViewModelProvider.notifier);
-    notifier.addCard('todo', 'Third task', 'Created for reorder test');
-    final before = container.read(boardViewModelProvider);
-    final todoCards = before.columns.firstWhere((c) => c.id == 'todo').cards;
-    final firstCardId = todoCards.first.id;
+  test('deleteCard removes the card from its column', () async {
+    await load();
 
-    notifier.moveCard(
-      cardId: firstCardId,
+    await notifier().deleteCard('todo', 'c1');
+
+    expect(titlesIn('todo'), ['Set up CI pipeline']);
+    expect(repository.calls, contains('deleteCard:c1'));
+  });
+
+  test('moveCard transfers a card between columns', () async {
+    await load();
+
+    await notifier().moveCard(
+      cardId: 'c1',
       fromColumnId: 'todo',
-      toColumnId: 'todo',
-      targetIndex: todoCards.length,
+      toColumnId: 'done',
     );
 
-    final after = container.read(boardViewModelProvider);
-    final reordered = after.columns.firstWhere((c) => c.id == 'todo').cards;
-    expect(reordered.last.id, firstCardId);
-    expect(reordered.length, todoCards.length);
+    expect(titlesIn('todo'), ['Set up CI pipeline']);
+    expect(titlesIn('done'), [
+      'Project kickoff meeting',
+      'Design onboarding flow',
+    ]);
+    expect(repository.calls, contains('moveCard:c1:done:1'));
   });
 
-  test('moveCard inserts into target column at provided index', () {
-    final notifier = container.read(boardViewModelProvider.notifier);
-    final board = container.read(boardViewModelProvider);
-    final movedCardId = board.columns
-        .firstWhere((c) => c.id == 'todo')
-        .cards
-        .first
-        .id;
+  test('moveCard inserts into the target column at the given index', () async {
+    await load();
 
-    notifier.moveCard(
-      cardId: movedCardId,
+    await notifier().moveCard(
+      cardId: 'c1',
       fromColumnId: 'todo',
       toColumnId: 'in-progress',
       targetIndex: 0,
     );
 
-    final after = container.read(boardViewModelProvider);
-    final inProgress = after.columns.firstWhere((c) => c.id == 'in-progress');
-    expect(inProgress.cards.first.id, movedCardId);
+    expect(titlesIn('in-progress'), [
+      'Design onboarding flow',
+      'Implement drag and drop',
+    ]);
+    expect(repository.calls, contains('moveCard:c1:in-progress:0'));
+  });
+
+  test('moveCard reorders within a column, decrementing a downward move',
+      () async {
+    await load();
+
+    // Drop below both existing cards: index 2 before removal, 1 after.
+    await notifier().moveCard(
+      cardId: 'c1',
+      fromColumnId: 'todo',
+      toColumnId: 'todo',
+      targetIndex: 2,
+    );
+
+    expect(titlesIn('todo'), [
+      'Set up CI pipeline',
+      'Design onboarding flow',
+    ]);
+    expect(repository.calls, contains('moveCard:c1:todo:1'));
+  });
+
+  test('moveCard reorders upward within a column without decrementing',
+      () async {
+    await load();
+
+    await notifier().moveCard(
+      cardId: 'c2',
+      fromColumnId: 'todo',
+      toColumnId: 'todo',
+      targetIndex: 0,
+    );
+
+    expect(titlesIn('todo'), [
+      'Set up CI pipeline',
+      'Design onboarding flow',
+    ]);
+    expect(repository.calls, contains('moveCard:c2:todo:0'));
+  });
+
+  test('a failed move reverts the optimistic change', () async {
+    await load();
+    repository.failNextWith = const BoardException('Column not found');
+
+    await expectLater(
+      notifier().moveCard(
+        cardId: 'c1',
+        fromColumnId: 'todo',
+        toColumnId: 'done',
+      ),
+      throwsA(isA<BoardException>()),
+    );
+
+    expect(titlesIn('todo'), [
+      'Design onboarding flow',
+      'Set up CI pipeline',
+    ]);
+    expect(titlesIn('done'), ['Project kickoff meeting']);
+  });
+
+  test('a failed rename reverts the optimistic change', () async {
+    await load();
+    repository.failNextWith = const BoardException('Title is required');
+
+    await expectLater(
+      notifier().renameColumn('todo', 'Backlog'),
+      throwsA(isA<BoardException>()),
+    );
+
+    expect(board().columns.firstWhere((c) => c.id == 'todo').title, 'To Do');
+  });
+
+  test('a failed delete puts the card back', () async {
+    await load();
+    repository.failNextWith = const BoardException('Card not found');
+
+    await expectLater(
+      notifier().deleteCard('todo', 'c1'),
+      throwsA(isA<BoardException>()),
+    );
+
+    expect(titlesIn('todo'), [
+      'Design onboarding flow',
+      'Set up CI pipeline',
+    ]);
+  });
+
+  test('moving an unknown card is a no-op and calls nothing', () async {
+    await load();
+
+    await notifier().moveCard(
+      cardId: 'does-not-exist',
+      fromColumnId: 'todo',
+      toColumnId: 'done',
+    );
+
+    expect(repository.calls, ['fetchBoard']);
   });
 }

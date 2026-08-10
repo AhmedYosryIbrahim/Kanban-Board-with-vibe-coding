@@ -9,14 +9,18 @@ A single-board Kanban project management app built with Flutter web.
 - Cards with a title and details
 - Drag and drop cards between columns
 - Add, edit, and delete cards
-- Board populated with dummy data on startup, no persistence yet
+- Every change persisted through the backend API into SQLite
 
 ## Architecture
 
-- MVVM with Riverpod (`Notifier`/`NotifierProvider`) for state management
+- MVVM with Riverpod (`AsyncNotifier`/`AsyncNotifierProvider`)
 - `lib/models` - domain models (Board, BoardColumn, CardItem)
+- `lib/data` - repositories wrapping the backend API
 - `lib/viewmodels` - state and business logic
 - `lib/views` and `lib/widgets` - UI
+
+`flutter run -d chrome` still works for board and layout work, but serves the
+app on a different port from the API, so sign in will not work there.
 
 ## Running
 

@@ -1,11 +1,11 @@
 # Frontend (Flutter web)
 
-Flutter web app for the Kanban board. Package name `kanban_frontend`. All state
-is still in memory, seeded from dummy data, with no network calls and no auth -
-persistence arrives in Part 7.
+Flutter web app for the Kanban board. Package name `kanban_frontend`. Every
+board change goes through the backend API and is persisted in SQLite; the app
+ships no dummy data.
 
 In Docker the release bundle is built by stage 1 of the root `Dockerfile` and
-served by the backend at `/`. Nothing here talks to the backend yet.
+served by the backend at `/`.
 
 ## Toolchain
 
@@ -29,32 +29,32 @@ static files at `/`.
 
 ## Architecture
 
-MVVM with Riverpod. One `Notifier` owns the whole board; widgets read it and call
-methods on it. There is no repository or service layer yet.
+MVVM with Riverpod. Repositories wrap HTTP, viewmodels own state and call them,
+widgets call viewmodels. Widgets never talk to a repository directly.
 
 ```
 lib/
   main.dart                       ProviderScope + MaterialApp, routes on auth state
   data/
     auth_repository.dart          AuthRepository, AuthException, provider
+    board_repository.dart         BoardRepository, BoardException, provider
   viewmodels/
     auth_view_model.dart          AuthViewModel + authViewModelProvider
   views/
     login_screen.dart             LoginScreen
   models/
-    board.dart                    Board { List<BoardColumn> columns }
+    board.dart                    Board { id, name, subtitle, List<BoardColumn> columns }
     board_column.dart             BoardColumn { id, title, List<CardItem> cards }
     card_item.dart                CardItem { id, title, details }
   viewmodels/
     board_view_model.dart         BoardViewModel + boardViewModelProvider
   views/
-    board_screen.dart             BoardScreen, _WebTopBar
+    board_screen.dart             BoardScreen, _BoardBody, _BoardError, _WebTopBar
   widgets/
     column_widget.dart            ColumnWidget (title edit, drop target, insert indicator)
     card_widget.dart              CardWidget, _CardContent, DraggedCard payload
     card_dialog.dart              showAddCardDialog, showEditCardDialog, shared _CardDialog
-  data/
-    dummy_data.dart               buildDummyBoard() - 5 columns, 6 cards
+    board_action.dart             runBoardAction - reports a failed mutation
   theme/
     app_colors.dart               AppColors palette
     app_theme.dart                AppTheme.light
@@ -88,19 +88,38 @@ is served from. Tests inject a base URI, since `Uri.base` in the Dart VM is a
 
 ## State model
 
-`BoardViewModel extends Notifier<Board>`, exposed as `boardViewModelProvider`.
-`build()` returns `buildDummyBoard()`.
+`BoardViewModel extends AsyncNotifier<Board>`, exposed as
+`boardViewModelProvider`. `build()` fetches `GET /api/board`, so the screen
+renders loading, error, and data states straight from the provider.
 
-Methods:
+Mutations apply to local state first and call the backend after, so the UI
+responds immediately. If the call fails, `_apply` restores the previous board
+and rethrows; `runBoardAction` in the widget layer catches that and shows a
+SnackBar. The board visibly snaps back and the message says why.
 
 - `renameColumn(columnId, newTitle)`
-- `addCard(columnId, title, details)` - generates a v4 uuid
-- `updateCard(columnId, cardId, title, details)` - no-op on an unknown id
+- `addCard(columnId, title, details)` - the one exception to the optimistic
+  pattern: it calls the backend first, because the card id is assigned there
+- `updateCard(columnId, cardId, title, details)`
 - `deleteCard(columnId, cardId)`
 - `moveCard({cardId, fromColumnId, toColumnId, targetIndex})` - handles both
   cross-column moves and same-column reordering. For same-column moves the
   target index is decremented when moving downward, because the card is removed
-  before reinsertion.
+  before reinsertion. The decremented value is what goes to the API, which
+  defines `position` as the index after the move.
+- `refresh()` - refetches, for Part 10 when the AI changes the board
+
+### Riverpod 3 auto-disposes by default
+
+Providers with no listeners are torn down. Two consequences worth knowing:
+
+- In the app, leaving `BoardScreen` disposes the board provider, so signing out
+  and back in refetches rather than showing a stale board. That is wanted.
+- In tests, `container.read(provider.future)` does **not** create a listener, so
+  the provider can be disposed mid-build ("disposed during loading state, yet no
+  value could be emitted"). Hold a `container.listen` for the test's lifetime.
+  When the build fails, `provider.future` never completes at all - assert on the
+  `AsyncError` state instead, which is what the UI renders anyway.
 
 ## Drag and drop
 
@@ -118,10 +137,11 @@ Uses the Flutter `Draggable` / `DragTarget` pair, not a package.
 
 ## Columns
 
-Fixed at 5, defined in `dummy_data.dart` with stable ids: `todo`, `in-progress`,
-`review`, `blocked`, `done`. Titles are editable in place (tap the header,
-`onSubmitted` or `onTapOutside` commits; empty input reverts). Columns cannot be
-added or removed - that is intentional for the MVP.
+Fixed at 5, created by the backend seed, with uuid ids that arrive from the API.
+Do not hardcode column ids. Titles are editable in place (tap the header,
+`onSubmitted` or `onTapOutside` commits; empty input reverts, and an unchanged
+title makes no request). Columns cannot be added or removed - that is
+intentional for the MVP.
 
 ## Theme
 
@@ -146,44 +166,44 @@ draws them when the callbacks are non-null.
 
 ## Tests
 
-`flutter test`, currently 21 tests.
+`flutter test`, currently 42 tests.
 
-`test/support/test_app.dart` holds the shared helpers: `FakeAuthRepository`,
-`useWideSurface`, `pumpApp`, and `pumpSignedInApp`. Every test that pumps
-`KanbanApp` must override `authRepositoryProvider`, because the app now makes a
-real session request on start up.
+`test/support/` holds the shared harness:
 
-- `test/widget_test.dart` - renders `KanbanApp`, asserts the 5 column titles and
-  one card title appear
-- `test/viewmodels/board_view_model_test.dart` - covers the seed board and every
-  `BoardViewModel` method including same-column reorder, indexed insert, and
-  `updateCard` on both a real and an unknown id. Uses a fresh
-  `ProviderContainer` per test with `addTearDown(container.dispose)`.
+- `test_app.dart` - `FakeAuthRepository`, `useWideSurface`, `pumpApp`,
+  `pumpSignedInApp`. Every test that pumps `KanbanApp` must override both
+  `authRepositoryProvider` and `boardRepositoryProvider`, because the app makes
+  a session request and a board request on start up. Pass `settle: false` to
+  inspect a transient state; `pumpAndSettle` runs straight past a spinner, and
+  hangs forever against a deliberately held load.
+- `fake_board_repository.dart` - records the calls the viewmodel makes, and can
+  be told to fail the next mutation (`failNextWith`), fail the load
+  (`loadError`), or hold the load open (`holdLoad`).
+- `board_fixture.dart` - the seeded board as test data. This is where the old
+  `lib/data/dummy_data.dart` went; the app itself no longer ships dummy data.
+
+Files:
+
+- `test/widget_test.dart` - the board renders with its columns and cards
+- `test/data/board_repository_test.dart` - every endpoint against a `MockClient`,
+  asserting method, path, and body, plus error mapping and base-URI resolution
+- `test/viewmodels/board_view_model_test.dart` - load, each mutation, the
+  same-column decrement, and the revert path for a failed move, rename, delete,
+  and add
+- `test/views/board_screen_test.dart` - renders from the repository rather than
+  dummy data, the loading spinner, the error state and its retry, and a failed
+  mutation reverting with a SnackBar
+- `test/views/login_screen_test.dart` - which screen each session state shows,
+  rejected credentials, a successful login, empty-field validation, logout, and
+  the username in the top bar
 - `test/widgets/board_interaction_test.dart` - edit dialog prefill, a completed
   edit, empty-title validation, and a drag between columns driven by a manual
   multi-step gesture. These need a wide viewport, so each test calls
   `useWideSurface` before pumping; at the default 800x600 surface the second
   column is off screen and the drag test cannot reach it.
-- `test/views/login_screen_test.dart` - which screen each session state shows,
-  rejected credentials, a successful login, empty-field validation, logout, and
-  the username in the top bar.
 
 ## Known gaps
 
 These are expected to be closed by later parts of `docs/PLAN.md`:
 
-- The board itself is still in memory. `BoardViewModel` seeds from
-  `dummy_data.dart` and nothing about the board is persisted, so board changes
-  are lost on reload even though the session is not.
-- The board title "Product Roadmap" and subtitle are hardcoded in
-  `board_screen.dart`.
 - No AI chat sidebar.
-
-## Conventions
-
-- Match the existing style: `const` constructors, trailing commas, doc comment
-  on each public class explaining its role.
-- Keep business logic in `BoardViewModel`, not in widgets. Widgets call
-  `ref.read(boardViewModelProvider.notifier)`.
-- Add a viewmodel unit test for every new viewmodel method.
-- No emojis anywhere.
