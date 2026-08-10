@@ -1,17 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:kanban_frontend/main.dart';
 import 'package:kanban_frontend/widgets/card_widget.dart';
 
-/// Gives the board a viewport wide enough for several columns to be on screen.
-void _useWideSurface(WidgetTester tester) {
-  tester.view.physicalSize = const Size(1600, 1200);
-  tester.view.devicePixelRatio = 1.0;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
-}
+import '../support/test_app.dart';
 
 Finder _cardNamed(String title) =>
     find.widgetWithText(CardWidget, title);
@@ -20,8 +12,8 @@ void main() {
   testWidgets('tapping edit opens the dialog prefilled with the card values', (
     tester,
   ) async {
-    _useWideSurface(tester);
-    await tester.pumpWidget(const ProviderScope(child: KanbanApp()));
+    useWideSurface(tester);
+    await pumpSignedInApp(tester);
 
     await tester.tap(
       find.descendant(
@@ -45,8 +37,8 @@ void main() {
   });
 
   testWidgets('editing a card updates it on the board', (tester) async {
-    _useWideSurface(tester);
-    await tester.pumpWidget(const ProviderScope(child: KanbanApp()));
+    useWideSurface(tester);
+    await pumpSignedInApp(tester);
 
     await tester.tap(
       find.descendant(
@@ -67,8 +59,8 @@ void main() {
   });
 
   testWidgets('an empty title is rejected by the edit dialog', (tester) async {
-    _useWideSurface(tester);
-    await tester.pumpWidget(const ProviderScope(child: KanbanApp()));
+    useWideSurface(tester);
+    await pumpSignedInApp(tester);
 
     await tester.tap(
       find.descendant(
@@ -87,8 +79,8 @@ void main() {
   });
 
   testWidgets('dragging a card moves it to another column', (tester) async {
-    _useWideSurface(tester);
-    await tester.pumpWidget(const ProviderScope(child: KanbanApp()));
+    useWideSurface(tester);
+    await pumpSignedInApp(tester);
 
     // "Set up CI pipeline" starts in To Do; drag it onto In Progress.
     final source = tester.getCenter(find.text('Set up CI pipeline'));

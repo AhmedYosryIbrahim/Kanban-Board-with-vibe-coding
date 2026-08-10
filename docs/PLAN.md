@@ -45,7 +45,7 @@ scripts/                 start/stop for Mac, Linux, Windows
 - [x] Part 1: Plan
 - [x] Part 2: Scaffolding
 - [x] Part 3: Add in Frontend
-- [ ] Part 4: Fake user sign in
+- [x] Part 4: Fake user sign in
 - [ ] Part 5: Database modeling
 - [ ] Part 6: Backend
 - [ ] Part 7: Frontend + Backend
@@ -207,40 +207,64 @@ Gate the board behind a login screen. Credentials hardcoded to `user` /
 
 ## Checklist
 
-- [ ] `POST /api/login` - validates credentials, sets the signed HttpOnly cookie
-- [ ] `POST /api/logout` - clears the cookie, returns 204
-- [ ] `GET /api/me` - returns `{ username }` or 401
-- [ ] `requireAuth` middleware applied to `/api` except `health` and `login`
-- [ ] `SESSION_SECRET` read from the environment with a development fallback
-- [ ] Flutter `LoginScreen` using the project palette, with an error message on
+- [x] `POST /api/login` - validates credentials, sets the signed HttpOnly cookie
+- [x] `POST /api/logout` - clears the cookie, returns 204
+- [x] `GET /api/me` - returns `{ username }` or 401
+- [x] `requireAuth` middleware, applied to `/api/me` now and to the board routes
+      in Part 6. `health` and `login` stay open.
+- [x] `SESSION_SECRET` read from the environment with a development fallback
+- [x] Flutter `LoginScreen` using the project palette, with an error message on
       bad credentials
-- [ ] `AuthViewModel` holding the session state, checked on app start via
+- [x] `AuthViewModel` holding the session state, checked on app start via
       `/api/me`
-- [ ] `main.dart` routes to `LoginScreen` or `BoardScreen` based on that state
-- [ ] Logout control in `_WebTopBar`, replacing one of the dead placeholder
-      buttons
-- [ ] Add `http` to `pubspec.yaml` and send credentials with requests so the
-      cookie is included
+- [x] `main.dart` routes to `LoginScreen` or `BoardScreen` based on that state
+- [x] Logout control in `_WebTopBar`. Both dead placeholder buttons were
+      replaced by the username label and a "Log out" button.
+- [x] Add `http` to `pubspec.yaml`. No extra credential handling is needed - the
+      app and API share an origin, so the browser sends the cookie itself.
 
 ## Tests
 
-- [ ] Backend: login with correct credentials returns 200 and a `Set-Cookie`
-- [ ] Backend: login with wrong credentials returns 401 and no cookie
-- [ ] Backend: `/api/me` without a cookie returns 401
-- [ ] Backend: `/api/me` with the cookie from a login returns the username
-- [ ] Backend: a tampered or unsigned cookie is rejected
-- [ ] Backend: logout clears the cookie and a follow-up `/api/me` returns 401
-- [ ] Flutter: `LoginScreen` shows an error on failed login
-- [ ] Flutter: successful login navigates to the board
-- [ ] Flutter: logout returns to the login screen
+- [x] Backend: login with correct credentials returns 200 and a `Set-Cookie`
+      carrying HttpOnly and SameSite
+- [x] Backend: login with wrong credentials, an unknown username, or no body at
+      all returns 401 and no cookie
+- [x] Backend: `/api/me` without a cookie returns 401
+- [x] Backend: `/api/me` with the cookie from a login returns the username
+- [x] Backend: cookies with a tampered signature, a tampered username, no
+      signature, or a signature from a different secret are all rejected
+- [x] Backend: logout clears the cookie and a follow-up `/api/me` returns 401
+- [x] Backend: health stays reachable without a session
+- [x] Flutter: `LoginScreen` shows an error on failed login
+- [x] Flutter: successful login navigates to the board
+- [x] Flutter: logout returns to the login screen
+- [x] Flutter: empty fields are rejected before any request is made
+- [x] `flutter test` 21/21, `npm test` 18/18
 
 ## Success criteria
 
-- Hitting `/` in a fresh browser session shows the login screen, not the board
-- `user` / `password` signs in; anything else shows an error
-- The session survives a page reload
-- Logout returns to the login screen and the board is not reachable afterwards
-- `curl` against `/api/board` without a cookie returns 401
+- [x] Hitting `/` in a fresh browser session shows the login screen, not the
+      board
+- [x] `user` / `password` signs in; anything else shows an error. Both verified
+      in a real browser against the container.
+- [x] The session survives a page reload
+- [x] Logout returns to the login screen, and a reload afterwards still shows
+      login rather than the board
+- [x] `curl` without a cookie returns 401 from the guarded routes. `/api/board`
+      does not exist yet, so this was proved against `/api/me`; the board routes
+      pick up the same middleware in Part 6.
+
+## Notes
+
+The cookie deliberately does not set `secure`, because the MVP runs over plain
+HTTP on localhost and `secure` would stop the browser sending it at all. That
+and the `dev-secret` fallback both need revisiting before this is ever served
+over HTTPS.
+
+Sign in only works when the app and the API share an origin, which is what the
+container gives. Under `flutter run -d chrome` the app is served on a different
+port, every API call becomes cross-origin, and the session cookie is not sent.
+Test auth against the container.
 
 ---
 
