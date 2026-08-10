@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../theme/app_colors.dart';
+import '../viewmodels/auth_view_model.dart';
 import '../viewmodels/board_view_model.dart';
 import '../widgets/column_widget.dart';
 
@@ -90,11 +92,13 @@ class BoardScreen extends ConsumerWidget {
   }
 }
 
-class _WebTopBar extends StatelessWidget {
+class _WebTopBar extends ConsumerWidget {
   const _WebTopBar();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final username = ref.watch(authViewModelProvider).value;
+
     return Container(
       height: 72,
       decoration: const BoxDecoration(
@@ -125,9 +129,20 @@ class _WebTopBar extends StatelessWidget {
                   style: TextStyle(color: Color(0xFF6D7482), fontSize: 14),
                 ),
                 const Spacer(),
-                TextButton(onPressed: () {}, child: const Text('Share')),
-                const SizedBox(width: 8),
-                ElevatedButton(onPressed: () {}, child: const Text('New task')),
+                if (username != null)
+                  Text(
+                    username,
+                    style: const TextStyle(
+                      color: AppColors.grayText,
+                      fontSize: 14,
+                    ),
+                  ),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: () =>
+                      ref.read(authViewModelProvider.notifier).signOut(),
+                  child: const Text('Log out'),
+                ),
               ],
             ),
           ),

@@ -10,7 +10,8 @@ served by the backend at `/`. Nothing here talks to the backend yet.
 ## Toolchain
 
 - Flutter 3.41.8 stable, Dart SDK `^3.11.5`
-- Dependencies: `flutter_riverpod` ^3.3.2, `uuid` ^4.6.0, `cupertino_icons`
+- Dependencies: `flutter_riverpod` ^3.3.2, `http` ^1.5.0, `uuid` ^4.6.0,
+  `cupertino_icons`
 - Dev: `flutter_test`, `flutter_lints` ^6.0.0 (via `analysis_options.yaml`)
 
 ## Commands
@@ -33,7 +34,13 @@ methods on it. There is no repository or service layer yet.
 
 ```
 lib/
-  main.dart                       ProviderScope + MaterialApp, home: BoardScreen
+  main.dart                       ProviderScope + MaterialApp, routes on auth state
+  data/
+    auth_repository.dart          AuthRepository, AuthException, provider
+  viewmodels/
+    auth_view_model.dart          AuthViewModel + authViewModelProvider
+  views/
+    login_screen.dart             LoginScreen
   models/
     board.dart                    Board { List<BoardColumn> columns }
     board_column.dart             BoardColumn { id, title, List<CardItem> cards }
@@ -55,6 +62,29 @@ lib/
 
 All models are immutable with `copyWith`. `BoardViewModel` never mutates in
 place; every method rebuilds `state` from list comprehensions.
+
+## Auth
+
+`AuthViewModel extends AsyncNotifier<String?>` holds the signed in username, or
+null when signed out. The session is an HttpOnly cookie the browser owns, so
+`build()` has to ask `GET /api/me` whether one exists - the app cannot read the
+cookie itself. `main.dart` watches it and shows `LoginScreen`, `BoardScreen`, or
+a spinner accordingly. A failed session check falls through to `LoginScreen`.
+
+`signIn` throws `AuthException` on rejected credentials rather than putting the
+provider into an error state, so `LoginScreen` can show the message inline while
+staying usable.
+
+The app is served from the same origin as the API, so the browser attaches the
+session cookie by itself and `AuthRepository` never touches it. This only holds
+under Docker. Running `flutter run -d chrome` serves the app from a different
+port, which makes every API call cross-origin: the cookie will not be sent and
+sign in will not work without adding CORS and `withCredentials`. Test against
+the container.
+
+`AuthRepository` resolves paths against `Uri.base` so it works wherever the app
+is served from. Tests inject a base URI, since `Uri.base` in the Dart VM is a
+`file://` path.
 
 ## State model
 
@@ -116,7 +146,12 @@ draws them when the callbacks are non-null.
 
 ## Tests
 
-`flutter test`, currently 14 tests:
+`flutter test`, currently 21 tests.
+
+`test/support/test_app.dart` holds the shared helpers: `FakeAuthRepository`,
+`useWideSurface`, `pumpApp`, and `pumpSignedInApp`. Every test that pumps
+`KanbanApp` must override `authRepositoryProvider`, because the app now makes a
+real session request on start up.
 
 - `test/widget_test.dart` - renders `KanbanApp`, asserts the 5 column titles and
   one card title appear
@@ -127,16 +162,19 @@ draws them when the callbacks are non-null.
 - `test/widgets/board_interaction_test.dart` - edit dialog prefill, a completed
   edit, empty-title validation, and a drag between columns driven by a manual
   multi-step gesture. These need a wide viewport, so each test calls
-  `_useWideSurface` before pumping; at the default 800x600 surface the second
+  `useWideSurface` before pumping; at the default 800x600 surface the second
   column is off screen and the drag test cannot reach it.
+- `test/views/login_screen_test.dart` - which screen each session state shows,
+  rejected credentials, a successful login, empty-field validation, logout, and
+  the username in the top bar.
 
 ## Known gaps
 
 These are expected to be closed by later parts of `docs/PLAN.md`:
 
-- No HTTP client and no `http` dependency. All data is local and lost on reload.
-- No login screen, no routing - `main.dart` goes straight to `BoardScreen`.
-- `_WebTopBar` "Share" and "New task" buttons have empty `onPressed` handlers.
+- The board itself is still in memory. `BoardViewModel` seeds from
+  `dummy_data.dart` and nothing about the board is persisted, so board changes
+  are lost on reload even though the session is not.
 - The board title "Product Roadmap" and subtitle are hardcoded in
   `board_screen.dart`.
 - No AI chat sidebar.

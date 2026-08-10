@@ -4,11 +4,12 @@ A single-board Kanban project management app built with Flutter web.
 
 ## Features
 
+- Sign in and sign out against the backend session
 - One board with 5 fixed, renamable columns
 - Cards with a title and details
 - Drag and drop cards between columns
-- Add and delete cards
-- Populated with dummy data on startup, no persistence
+- Add, edit, and delete cards
+- Board populated with dummy data on startup, no persistence yet
 
 ## Architecture
 
@@ -19,9 +20,15 @@ A single-board Kanban project management app built with Flutter web.
 
 ## Running
 
+Run the whole app from the repo root, which serves this bundle and the API from
+one origin:
+
 ```
-flutter run -d chrome
+./scripts/start.sh
 ```
+
+`flutter run -d chrome` still works for board and layout work, but serves the
+app on a different port from the API, so sign in will not work there.
 
 ## Testing
 

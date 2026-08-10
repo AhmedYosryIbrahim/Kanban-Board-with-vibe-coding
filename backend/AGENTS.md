@@ -3,9 +3,9 @@
 Serves the built Flutter web app at `/` and the JSON API under `/api`. Owns the
 SQLite database and the OpenRouter AI calls.
 
-Status: static serving and `/api/health` are implemented. The database, auth,
-and AI sections below are the contract that Parts 4 and 6-9 of `docs/PLAN.md`
-build against.
+Status: static serving, `/api/health`, and the session routes are implemented.
+The database and AI sections below are the contract that Parts 6-9 of
+`docs/PLAN.md` build against.
 
 ## Toolchain
 
@@ -101,11 +101,19 @@ sees and returns are stable and match the frontend.
 ## Auth
 
 MVP credentials are hardcoded to `user` / `password`, checked in the login
-route. On success the route sets a signed `HttpOnly` cookie holding the
-username; `requireAuth` reads it and attaches `req.username`. `SESSION_SECRET`
-comes from the environment with a development fallback. There is no password
-column and no hashing in the MVP - the `users` table exists so multiple users
-are possible later.
+route. On success the route sets a signed `HttpOnly` cookie named
+`kanban_session` holding the username; `requireAuth` reads it and attaches
+`req.username`. `SESSION_SECRET` comes from the environment with a development
+fallback. There is no password column and no hashing in the MVP - the `users`
+table exists so multiple users are possible later.
+
+cookie-parser sets a signed cookie to `false` when the signature does not
+verify, so a tampered cookie fails the same falsy check as a missing one and
+`requireAuth` needs no special case for it.
+
+`secure` is deliberately not set on the cookie, because the MVP runs over plain
+HTTP on localhost. Setting it would stop the cookie being sent at all. Revisit
+before this is ever served over HTTPS, along with the `dev-secret` fallback.
 
 ## Database
 
