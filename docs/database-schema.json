@@ -1,0 +1,287 @@
+{
+  "database": "sqlite",
+  "driver": "node:sqlite",
+  "file": "data/kanban.db",
+  "pragmas": {
+    "foreign_keys": "ON"
+  },
+  "tables": [
+    {
+      "name": "users",
+      "purpose": "One row per person who can sign in. The MVP seeds exactly one and checks credentials in code, but the table exists so multiple users need no reshaping later.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "primaryKey": true,
+          "nullable": false,
+          "notes": "SQLite rowid alias"
+        },
+        {
+          "name": "username",
+          "type": "TEXT",
+          "nullable": false,
+          "unique": true
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "boards",
+      "purpose": "A Kanban board belonging to a user. The MVP seeds one per user.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "primaryKey": true,
+          "nullable": false
+        },
+        {
+          "name": "user_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "references": {
+            "table": "users",
+            "column": "id",
+            "onDelete": "CASCADE"
+          }
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "nullable": false,
+          "notes": "Shown as the board heading, e.g. Product Roadmap"
+        },
+        {
+          "name": "subtitle",
+          "type": "TEXT",
+          "nullable": false,
+          "default": "''",
+          "notes": "Shown under the heading, e.g. Q4 delivery board"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_boards_user_id",
+          "columns": ["user_id"]
+        }
+      ]
+    },
+    {
+      "name": "board_columns",
+      "purpose": "The fixed columns of a board. Renamable, but not addable or removable in the MVP.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "primaryKey": true,
+          "nullable": false,
+          "notes": "uuid v4. Text so the same id travels unchanged through the API, the Flutter models, and the AI prompt."
+        },
+        {
+          "name": "board_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "references": {
+            "table": "boards",
+            "column": "id",
+            "onDelete": "CASCADE"
+          }
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "nullable": false
+        },
+        {
+          "name": "position",
+          "type": "INTEGER",
+          "nullable": false,
+          "notes": "Left to right order within the board, contiguous from 0"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_board_columns_board_id_position",
+          "columns": ["board_id", "position"]
+        }
+      ]
+    },
+    {
+      "name": "cards",
+      "purpose": "A card inside a column.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "primaryKey": true,
+          "nullable": false,
+          "notes": "uuid v4, same reasoning as board_columns.id"
+        },
+        {
+          "name": "column_id",
+          "type": "TEXT",
+          "nullable": false,
+          "references": {
+            "table": "board_columns",
+            "column": "id",
+            "onDelete": "CASCADE"
+          }
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "nullable": false
+        },
+        {
+          "name": "details",
+          "type": "TEXT",
+          "nullable": false,
+          "default": "''"
+        },
+        {
+          "name": "position",
+          "type": "INTEGER",
+          "nullable": false,
+          "notes": "Top to bottom order within the column, contiguous from 0"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_cards_column_id_position",
+          "columns": ["column_id", "position"]
+        }
+      ]
+    },
+    {
+      "name": "messages",
+      "purpose": "Chat history for the AI sidebar, so a conversation survives a reload and can be replayed to the model.",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "primaryKey": true,
+          "nullable": false,
+          "notes": "Also the chronological order; messages are read ORDER BY id"
+        },
+        {
+          "name": "board_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "references": {
+            "table": "boards",
+            "column": "id",
+            "onDelete": "CASCADE"
+          },
+          "notes": "Scoped to the board rather than the user, because the conversation is about a specific board"
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "nullable": false,
+          "check": "role IN ('user', 'assistant')"
+        },
+        {
+          "name": "content",
+          "type": "TEXT",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_messages_board_id_id",
+          "columns": ["board_id", "id"]
+        }
+      ]
+    }
+  ],
+  "invariants": [
+    {
+      "rule": "cards.position is contiguous from 0 within each column_id",
+      "enforcedBy": "application code, inside a transaction",
+      "reason": "A UNIQUE (column_id, position) constraint would fire mid-statement while a reindexing UPDATE shifts rows, so the invariant is upheld in code instead of declared."
+    },
+    {
+      "rule": "board_columns.position is contiguous from 0 within each board_id",
+      "enforcedBy": "the seed",
+      "reason": "Columns cannot be added, removed, or reordered in the MVP, so nothing changes this after creation."
+    },
+    {
+      "rule": "Every request resolves the board from the signed in user, never from a client-supplied board id",
+      "enforcedBy": "application code",
+      "reason": "Keeps one user from reading or writing another user's board."
+    }
+  ],
+  "seed": {
+    "condition": "Applied on first run only, when the users table is empty.",
+    "users": [{ "id": 1, "username": "user" }],
+    "boards": [
+      {
+        "id": 1,
+        "user_id": 1,
+        "name": "Product Roadmap",
+        "subtitle": "Q4 delivery board"
+      }
+    ],
+    "board_columns": [
+      { "title": "To Do", "position": 0 },
+      { "title": "In Progress", "position": 1 },
+      { "title": "Review", "position": 2 },
+      { "title": "Blocked", "position": 3 },
+      { "title": "Done", "position": 4 }
+    ],
+    "cards": [
+      {
+        "column": "To Do",
+        "position": 0,
+        "title": "Design onboarding flow",
+        "details": "Sketch wireframes for the new user onboarding."
+      },
+      {
+        "column": "To Do",
+        "position": 1,
+        "title": "Set up CI pipeline",
+        "details": "Configure automated build and test checks."
+      },
+      {
+        "column": "In Progress",
+        "position": 0,
+        "title": "Implement drag and drop",
+        "details": "Allow cards to move between columns."
+      },
+      {
+        "column": "Review",
+        "position": 0,
+        "title": "Code review: auth module",
+        "details": "Check for security issues before merging."
+      },
+      {
+        "column": "Blocked",
+        "position": 0,
+        "title": "Waiting on API keys",
+        "details": "Blocked until third-party access is granted."
+      },
+      {
+        "column": "Done",
+        "position": 0,
+        "title": "Project kickoff meeting",
+        "details": "Aligned on scope and timeline with stakeholders."
+      }
+    ],
+    "notes": "board_columns.id and cards.id are uuids generated at seed time, so they are not listed here."
+  },
+  "notOnTheSchema": [
+    {
+      "item": "password or password_hash on users",
+      "reason": "MVP credentials are hardcoded in the login route. Adding an unused column now would imply an authentication story that does not exist."
+    },
+    {
+      "item": "created_at / updated_at timestamps",
+      "reason": "Nothing in the API surface or the UI reads them. Ordering comes from position for cards and from id for messages."
+    },
+    {
+      "item": "UNIQUE (user_id) on boards",
+      "reason": "The MVP has one board per user, but constraining it would make a second board a migration rather than an insert."
+    }
+  ]
+}

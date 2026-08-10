@@ -46,7 +46,7 @@ scripts/                 start/stop for Mac, Linux, Windows
 - [x] Part 2: Scaffolding
 - [x] Part 3: Add in Frontend
 - [x] Part 4: Fake user sign in
-- [ ] Part 5: Database modeling
+- [x] Part 5: Database modeling
 - [ ] Part 6: Backend
 - [ ] Part 7: Frontend + Backend
 - [ ] Part 8: AI connectivity
@@ -275,19 +275,23 @@ this part.
 
 ## Checklist
 
-- [ ] `docs/database-schema.json` - the machine-readable proposal: tables,
+- [x] `docs/database-schema.json` - the machine-readable proposal: tables,
       columns, types, nullability, foreign keys, indexes
-- [ ] `docs/DATABASE.md` - the rationale: why relational over a JSON blob, how
+- [x] `docs/DATABASE.md` - the rationale: why relational over a JSON blob, how
       card ordering works, how the AI's card-level operations map to writes,
       what is deliberately left out of the MVP
-- [ ] Tables: `users`, `boards`, `columns`, `cards`, `messages`
-- [ ] Text ids for `columns` and `cards` so the ids are stable across the API,
-      the frontend, and the AI
-- [ ] Integer `position` per column, contiguous from 0, for card ordering
-- [ ] Foreign keys with `ON DELETE CASCADE` from board to columns to cards
-- [ ] `messages` table for the chat history that Part 9 needs
-- [ ] Document the seed: one user `user`, one board, the 5 standard columns
-- [ ] User reviews and signs off
+- [x] Tables: `users`, `boards`, `board_columns`, `cards`, `messages`.
+      The column table is named `board_columns` rather than `columns`, which
+      reads badly in SQL next to the keyword and matches the `BoardColumn`
+      model.
+- [x] Text ids for `board_columns` and `cards` so the ids are stable across the
+      API, the frontend, and the AI
+- [x] Integer `position` per column, contiguous from 0, for card ordering
+- [x] Foreign keys with `ON DELETE CASCADE` from board to columns to cards
+- [x] `messages` table for the chat history that Part 9 needs
+- [x] Document the seed: one user `user`, one board, the 5 standard columns,
+      and the 6 demo cards
+- [x] User reviews and signs off
 
 ## Tests
 
